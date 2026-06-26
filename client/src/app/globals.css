@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-forest: #1a3c34;
+  --color-forest-light: #234a40;
+  --color-forest-stripe: #1f4439;
+  --color-gold: #d4af37;
+  --color-gold-hover: #c9a227;
+  --color-olive: #4a5d3f;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: #ffffff;
+  color: #1a3c34;
+  font-family: var(--font-sans);
+}
+
+.hero-stripes {
+  background-color: var(--color-forest);
+  background-image: repeating-linear-gradient(
+    -35deg,
+    var(--color-forest-stripe) 0,
+    var(--color-forest-stripe) 2px,
+    transparent 2px,
+    transparent 48px
+  );
+}
