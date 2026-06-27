@@ -100,12 +100,42 @@ npm run dev
 
 Client runs at [http://localhost:3000](http://localhost:3000).
 
+## Email verification
+
+After registration, users receive a verification email before they can sign in. Verification links expire after 24 hours.
+
+### Development
+
+Without SMTP configured, the verification link is printed in the **server console** when someone registers.
+
+### Production
+
+Add SMTP settings to `server/.env`:
+
+```
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-user
+SMTP_PASS=your-password
+SMTP_FROM=PE Falcon Safaris <noreply@pefalconsafaris.com>
+```
+
+Then run migrations if you have not already:
+
+```bash
+cd server
+npm run db:migrate
+```
+
 ## API endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
-| POST | `/api/auth/register` | Create a new user account |
+| POST | `/api/auth/register` | Create a new user account (sends verification email) |
+| POST | `/api/auth/login` | Sign in with email and password |
+| GET | `/api/auth/me` | Get the current signed-in user (Bearer token) |
+| GET | `/api/auth/verify-email?token=...` | Verify a user's email address |
 
 ### Register request body
 
@@ -123,3 +153,5 @@ Client runs at [http://localhost:3000](http://localhost:3000).
 
 - Public homepage with featured destinations
 - User registration page wired to Express + PostgreSQL
+- Email verification after registration
+- Client login with JWT session

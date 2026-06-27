@@ -2,12 +2,16 @@ const { spawn, execSync, execFile } = require("child_process");
 const { existsSync } = require("fs");
 const path = require("path");
 
-const CLIENT_URL = "http://localhost:3000";
+const DEV_URLS = [
+  { label: "client", url: "http://localhost:3000" },
+  { label: "admin", url: "http://localhost:3001/login" },
+];
+
 const OPERA_DEBUG_PORT = 9224;
 const CDP_PORTS = [OPERA_DEBUG_PORT, 9333, 9225, 9226, 9227, 9228];
 const CDP_TIMEOUT_MS = 400;
-const CLIENT_POLL_MS = 150;
-const CLIENT_MAX_WAIT_MS = 30000;
+const SERVER_POLL_MS = 150;
+const SERVER_MAX_WAIT_MS = 45000;
 
 const OPERA_PATHS = [
   `${process.env.LOCALAPPDATA}\\Programs\\Opera\\opera.exe`,
@@ -36,8 +40,8 @@ function isOperaRunning() {
   }
 }
 
-function isClientTab(url) {
-  return url === CLIENT_URL || url.startsWith(`${CLIENT_URL}/`);
+function isAppTab(targetUrl, appUrl) {
+  return targetUrl === appUrl || targetUrl.startsWith(`${appUrl}/`);
 }
 
 function sleep(ms) {
@@ -118,12 +122,12 @@ async function findOperaCdp() {
   return null;
 }
 
-async function waitForClient() {
+async function waitForUrl(url) {
   const started = Date.now();
 
-  while (Date.now() - started < CLIENT_MAX_WAIT_MS) {
+  while (Date.now() - started < SERVER_MAX_WAIT_MS) {
     try {
-      const response = await fetch(CLIENT_URL, {
+      const response = await fetch(url, {
         signal: AbortSignal.timeout(400),
       });
 
@@ -134,10 +138,15 @@ async function waitForClient() {
       // Keep polling until the dev server is ready.
     }
 
-    await sleep(CLIENT_POLL_MS);
+    await sleep(SERVER_POLL_MS);
   }
 
   return false;
+}
+
+async function waitForAllUrls(urls) {
+  const results = await Promise.all(urls.map((entry) => waitForUrl(entry.url)));
+  return results.every(Boolean);
 }
 
 async function bringTabToFront(port, target) {
@@ -192,84 +201,110 @@ async function reloadTab(target) {
   });
 }
 
-async function openTabInWindow(port) {
-  await fetch(
-    `http://127.0.0.1:${port}/json/new?${encodeURIComponent(CLIENT_URL)}`
-  );
+async function openTabInWindow(port, url) {
+  await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`);
 }
 
-function openUrlInOpera(operaExe) {
-  spawn(operaExe, [CLIENT_URL], {
+function openUrlInOpera(operaExe, url) {
+  spawn(operaExe, [url], {
     detached: true,
     stdio: "ignore",
     windowsHide: false,
   }).unref();
 }
 
-function launchOpera(operaExe) {
-  spawn(
-    operaExe,
-    [`--remote-debugging-port=${OPERA_DEBUG_PORT}`, CLIENT_URL],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: false,
-    }
-  ).unref();
+function launchOpera(operaExe, url) {
+  spawn(operaExe, [`--remote-debugging-port=${OPERA_DEBUG_PORT}`, url], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: false,
+  }).unref();
 }
 
-function findClientTab(targets) {
+function findAppTab(targets, url) {
   return targets.find(
-    (target) => target.type === "page" && target.url && isClientTab(target.url)
+    (target) => target.type === "page" && target.url && isAppTab(target.url, url)
   );
+}
+
+async function openOrRefreshTab(port, targets, url) {
+  const existingTab = findAppTab(targets, url);
+
+  if (existingTab) {
+    await bringTabToFront(port, existingTab);
+    await reloadTab(existingTab);
+    return "refreshed";
+  }
+
+  await openTabInWindow(port, url);
+  return "opened";
+}
+
+async function openDevUrlsWithCdp(cdp) {
+  let targets = cdp.targets;
+
+  for (const entry of DEV_URLS) {
+    const action = await openOrRefreshTab(cdp.port, targets, entry.url);
+    console.log(`${action === "refreshed" ? "Refreshed" : "Opened"} ${entry.label} URL in Opera.`);
+    targets = await getTargets(cdp.port);
+  }
 }
 
 async function main() {
   const operaExe = findOperaExecutable();
 
   if (!operaExe) {
-    console.log("Opera not found. Open this URL manually:");
-    console.log(`  ${CLIENT_URL}`);
+    console.log("Opera not found. Open these URLs manually:");
+    for (const entry of DEV_URLS) {
+      console.log(`  ${entry.label}: ${entry.url}`);
+    }
     process.exit(0);
+  }
+
+  const ready = await waitForAllUrls(DEV_URLS);
+
+  if (!ready) {
+    console.log("Timed out waiting for dev servers. Opening URLs anyway...");
   }
 
   const cdp = await findOperaCdp();
 
   if (cdp) {
-    const existingTab = findClientTab(cdp.targets);
-
-    if (existingTab) {
-      await Promise.all([
-        bringTabToFront(cdp.port, existingTab),
-        waitForClient(),
-      ]);
-      await reloadTab(existingTab);
-      focusOperaWindow();
-      console.log("Refreshed existing Opera tab.");
-      return;
-    }
-
-    await waitForClient();
-    await openTabInWindow(cdp.port);
+    await openDevUrlsWithCdp(cdp);
     focusOperaWindow();
-    console.log("Opened client URL in existing Opera window.");
     return;
   }
 
   if (isOperaRunning()) {
-    await waitForClient();
-    openUrlInOpera(operaExe);
-    await sleep(400);
+    for (const entry of DEV_URLS) {
+      openUrlInOpera(operaExe, entry.url);
+      await sleep(300);
+    }
+
     focusOperaWindow();
-    console.log("Opened client URL in existing Opera window.");
+    console.log("Opened client and admin URLs in existing Opera window.");
     console.log("Run scripts\\setup-opera-debug.cmd once to enable tab refresh.");
     return;
   }
 
-  launchOpera(operaExe);
-  await waitForClient();
+  launchOpera(operaExe, DEV_URLS[0].url);
+  await sleep(800);
+
+  const freshCdp = await findOperaCdp();
+  if (freshCdp) {
+    for (const entry of DEV_URLS.slice(1)) {
+      await openTabInWindow(freshCdp.port, entry.url);
+      console.log(`Opened ${entry.label} URL in Opera.`);
+    }
+  } else {
+    for (const entry of DEV_URLS.slice(1)) {
+      openUrlInOpera(operaExe, entry.url);
+      await sleep(300);
+    }
+  }
+
   focusOperaWindow();
-  console.log("Opened client URL in Opera.");
+  console.log("Opened client and admin URLs in Opera.");
 }
 
 main().catch((error) => {

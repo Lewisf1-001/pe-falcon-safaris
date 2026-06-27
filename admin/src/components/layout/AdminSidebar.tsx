@@ -1,0 +1,75 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { clearAdminSession, getAdminUser } from "@/lib/auth";
+import { useEffect, useState } from "react";
+
+const navItems = [
+  { label: "Dashboard", href: "/" },
+  { label: "Admin Users", href: "/admin-users" },
+  { label: "Clients", href: "/clients" },
+  { label: "Bookings", href: "/bookings" },
+  { label: "Packages", href: "/packages" },
+  { label: "Payments", href: "/payments" },
+];
+
+export default function AdminSidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [username, setUsername] = useState("admin");
+
+  useEffect(() => {
+    const admin = getAdminUser();
+    if (admin?.username) {
+      setUsername(admin.username);
+    }
+  }, []);
+
+  function handleLogout() {
+    clearAdminSession();
+    router.push("/login");
+    router.refresh();
+  }
+
+  return (
+    <aside className="flex w-56 shrink-0 flex-col bg-forest-sidebar px-4 py-6 text-white">
+      <Link href="/" className="px-3 text-xl font-bold text-gold">
+        PE Falcon
+      </Link>
+
+      <nav className="mt-8 space-y-1">
+        {navItems.map((item) => {
+          const isActive =
+            item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`block rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? "bg-forest-light text-white"
+                  : "text-white/80 hover:bg-forest-light/60 hover:text-white"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="mt-auto border-t border-white/10 pt-4">
+        <p className="px-3 text-xs text-white/60">Signed in as</p>
+        <p className="px-3 text-sm font-medium text-white">{username}</p>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mt-3 w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/80 transition-colors hover:bg-forest-light/60 hover:text-white"
+        >
+          Sign out
+        </button>
+      </div>
+    </aside>
+  );
+}

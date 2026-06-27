@@ -1,9 +1,9 @@
 import Link from "next/link";
-import Button from "@/components/ui/Button";
+import AuthNav from "@/components/layout/AuthNav";
 
 const navLinks = [
   { label: "Home", href: "/" },
-  { label: "Destinations", href: "/#destinations" },
+  { label: "Packages", href: "/#packages" },
   { label: "About", href: "/#about" },
 ];
 
@@ -27,14 +27,7 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" href="/login" className="px-4 py-2">
-            Login
-          </Button>
-          <Button variant="primary" href="/register" className="px-4 py-2">
-            Register
-          </Button>
-        </div>
+        <AuthNav />
       </div>
     </header>
   );

@@ -13,7 +13,7 @@ export function errorHandler(
   const pgError = error as PgError;
 
   if (pgError.code === "23505") {
-    return res.status(409).json({ error: "An account with this email already exists." });
+    return res.status(409).json({ error: "A record with this value already exists." });
   }
 
   return res.status(500).json({ error: "Internal server error." });

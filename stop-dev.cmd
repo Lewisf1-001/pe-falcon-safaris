@@ -12,6 +12,10 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3000" ^| findstr "LISTENING
   taskkill /F /PID %%p >nul 2>&1
 )
 
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":3001" ^| findstr "LISTENING"') do (
+  taskkill /F /PID %%p >nul 2>&1
+)
+
 if exist "%~dp0scripts\.dev-servers.json" del "%~dp0scripts\.dev-servers.json"
 
 echo Done.

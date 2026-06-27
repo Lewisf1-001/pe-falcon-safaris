@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-forest: #1a3c34;
+  --color-forest-light: #234a40;
+  --color-forest-sidebar: #173a32;
+  --color-gold: #d4af37;
+  --color-cream: #f7f5f0;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-cream);
+  color: #1a3c34;
+  font-family: var(--font-sans);
+}

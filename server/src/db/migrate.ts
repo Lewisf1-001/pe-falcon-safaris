@@ -9,11 +9,22 @@ async function migrate() {
   }
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const schemaPath = path.join(__dirname, "schema.sql");
-  const schema = fs.readFileSync(schemaPath, "utf-8");
+  const sqlFiles = [
+    path.join(__dirname, "schema.sql"),
+    ...fs
+      .readdirSync(path.join(__dirname, "migrations"))
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .map((file) => path.join(__dirname, "migrations", file)),
+  ];
 
   try {
-    await pool.query(schema);
+    for (const filePath of sqlFiles) {
+      const sql = fs.readFileSync(filePath, "utf-8");
+      await pool.query(sql);
+      console.log(`Applied ${path.basename(filePath)}`);
+    }
+
     console.log("Database migration completed successfully.");
   } finally {
     await pool.end();

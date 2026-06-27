@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
+import PasswordInput from "@/components/auth/PasswordInput";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -51,7 +52,10 @@ export default function RegisterForm() {
         return;
       }
 
-      setSuccess("Account created successfully. You can now log in.");
+      setSuccess(
+        data.message ||
+          "Account created. Please check your email to verify your account before signing in."
+      );
       setForm(initialState);
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");
@@ -106,35 +110,25 @@ export default function RegisterForm() {
         />
       </div>
 
-      <div>
-        <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-forest">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          minLength={8}
-          value={form.password}
-          onChange={(e) => handleChange("password", e.target.value)}
-          className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-        />
-      </div>
+      <PasswordInput
+        id="password"
+        label="Password"
+        required
+        minLength={8}
+        autoComplete="new-password"
+        value={form.password}
+        onChange={(value) => handleChange("password", value)}
+      />
 
-      <div>
-        <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-medium text-forest">
-          Confirm password
-        </label>
-        <input
-          id="confirmPassword"
-          type="password"
-          required
-          minLength={8}
-          value={form.confirmPassword}
-          onChange={(e) => handleChange("confirmPassword", e.target.value)}
-          className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-        />
-      </div>
+      <PasswordInput
+        id="confirmPassword"
+        label="Confirm password"
+        required
+        minLength={8}
+        autoComplete="new-password"
+        value={form.confirmPassword}
+        onChange={(value) => handleChange("confirmPassword", value)}
+      />
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
