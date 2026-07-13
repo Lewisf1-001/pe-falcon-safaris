@@ -67,7 +67,7 @@ export default function Footer() {
         </div>
 
         <p className="mt-10 border-t border-white/15 pt-6 text-center text-sm text-white/70">
-          © 2025 PE Falcon Safaris. All rights reserved.
+          © 2026 PE Falcon Safaris. All rights reserved.
         </p>
       </div>
     </footer>
