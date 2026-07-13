@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 
-const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_HOST =
+  process.env.SMTP_HOST ||
+  (process.env.SMTP_USER?.toLowerCase().includes("@gmail.com") ? "smtp.gmail.com" : undefined);
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS?.replace(/\s+/g, "");
@@ -433,6 +435,7 @@ export async function sendAdminBookingNotificationEmail(
 export type PaymentEmailDetails = {
   packageName: string;
   travelDate: string;
+  guests?: number;
   amountUsd: number;
   method: string;
   methodLabel: string;
@@ -441,6 +444,7 @@ export type PaymentEmailDetails = {
   cardLast4?: string | null;
   cardBrand?: string | null;
   reference: string;
+  bookingId?: number;
 };
 
 export type AdminPaymentNotificationDetails = PaymentEmailDetails & {
@@ -453,37 +457,44 @@ export async function sendPaymentReceiptEmail(
   firstName: string,
   payment: PaymentEmailDetails
 ) {
-  const bookingsUrl = `${CLIENT_URL}/bookings`;
-  const subject = "Payment received — PE Falcon Safaris";
+  const bookingUrl = payment.bookingId
+    ? `${CLIENT_URL}/bookings/${payment.bookingId}`
+    : `${CLIENT_URL}/bookings`;
+  const subject = "Payment confirmed — your safari reservation is complete";
   const text = [
     `Hi ${firstName},`,
     "",
-    "We have received your payment for your safari booking.",
+    "Your payment was received successfully. Your safari reservation is now complete and confirmed.",
     "",
     `Package: ${payment.packageName}`,
     `Travel date: ${payment.travelDate}`,
-    `Amount: USD ${payment.amountUsd}`,
+    payment.guests != null ? `Guests: ${payment.guests}` : "",
+    `Amount paid: USD ${payment.amountUsd}`,
     `Payment method: ${payment.methodLabel}`,
     payment.provider ? `Provider: ${payment.provider}` : "",
     payment.phone ? `Mobile number: ${payment.phone}` : "",
     payment.cardLast4
       ? `Card: ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}`
       : "",
-    `Reference: ${payment.reference}`,
+    `Payment reference: ${payment.reference}`,
     "",
-    "Your booking is now confirmed.",
-    `View your bookings: ${bookingsUrl}`,
+    "Keep this email as your payment confirmation.",
+    `View your booking: ${bookingUrl}`,
+    "",
+    "We look forward to hosting you on safari.",
+    "— PE Falcon Safaris",
   ]
     .filter(Boolean)
     .join("\n");
 
   const html = `
     <p>Hi ${firstName},</p>
-    <p>We have received your payment for your safari booking.</p>
+    <p><strong>Your payment was received successfully.</strong> Your safari reservation is now complete and confirmed.</p>
     <ul>
       <li><strong>Package:</strong> ${payment.packageName}</li>
       <li><strong>Travel date:</strong> ${payment.travelDate}</li>
-      <li><strong>Amount:</strong> USD ${payment.amountUsd}</li>
+      ${payment.guests != null ? `<li><strong>Guests:</strong> ${payment.guests}</li>` : ""}
+      <li><strong>Amount paid:</strong> USD ${payment.amountUsd}</li>
       <li><strong>Payment method:</strong> ${payment.methodLabel}</li>
       ${payment.provider ? `<li><strong>Provider:</strong> ${payment.provider}</li>` : ""}
       ${payment.phone ? `<li><strong>Mobile number:</strong> ${payment.phone}</li>` : ""}
@@ -492,10 +503,11 @@ export async function sendPaymentReceiptEmail(
           ? `<li><strong>Card:</strong> ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}</li>`
           : ""
       }
-      <li><strong>Reference:</strong> ${payment.reference}</li>
+      <li><strong>Payment reference:</strong> ${payment.reference}</li>
     </ul>
-    <p>Your booking is now confirmed.</p>
-    <p><a href="${bookingsUrl}">View my bookings</a></p>
+    <p>Keep this email as your payment confirmation.</p>
+    <p><a href="${bookingUrl}">View your booking</a></p>
+    <p>We look forward to hosting you on safari.<br/>— PE Falcon Safaris</p>
   `;
 
   const transporter = createTransporter();
@@ -503,7 +515,7 @@ export async function sendPaymentReceiptEmail(
   if (!transporter) {
     console.log("SMTP not configured. Payment receipt details:");
     console.log(text);
-    return;
+    return false;
   }
 
   try {
@@ -515,6 +527,7 @@ export async function sendPaymentReceiptEmail(
       html,
     });
     console.log(`Payment receipt email sent to ${email}`);
+    return true;
   } catch (error) {
     console.error("Failed to send payment receipt email:", error);
     console.log("Fallback payment receipt details:");

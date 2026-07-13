@@ -133,9 +133,14 @@ export async function getAdminEmails() {
   return emails;
 }
 
-export async function sendPaymentSuccessEmails(paymentId: string) {
+export async function sendPaymentSuccessEmails(
+  paymentId: string,
+  options: { notifyAdmin?: boolean } = {}
+) {
+  const notifyAdmin = options.notifyAdmin !== false;
+
   const result = await pool.query(
-    `SELECT p.*, pk.name AS package_name, pk.slug AS package_slug, b.travel_date,
+    `SELECT p.*, pk.name AS package_name, pk.slug AS package_slug, b.travel_date, b.guests,
             u.first_name, u.last_name, u.email
      FROM payments p
      INNER JOIN bookings b ON b.id = p.booking_id
@@ -153,7 +158,8 @@ export async function sendPaymentSuccessEmails(paymentId: string) {
   const paymentEmail = {
     packageName: row.package_name as string,
     travelDate: formatTravelDate(row.travel_date) || "",
-    amountUsd: row.amount_usd as number,
+    guests: Number(row.guests),
+    amountUsd: Number(row.amount_usd),
     method: row.method as "mobile_money" | "card",
     methodLabel: methodLabel(row.method, row.provider),
     provider: row.provider,
@@ -161,12 +167,27 @@ export async function sendPaymentSuccessEmails(paymentId: string) {
     cardLast4: row.card_last4,
     cardBrand: row.card_brand,
     reference: (row.mpesa_receipt_number || row.external_ref || row.id) as string,
+    bookingId: Number(row.booking_id),
   };
 
-  try {
-    await sendPaymentReceiptEmail(row.email, row.first_name, paymentEmail);
-  } catch {
-    console.error("Payment completed but receipt email failed.");
+  if (!row.client_receipt_sent_at) {
+    try {
+      const sent = await sendPaymentReceiptEmail(row.email, row.first_name, paymentEmail);
+      if (sent !== false) {
+        await pool.query(
+          `UPDATE payments
+           SET client_receipt_sent_at = NOW(), updated_at = NOW()
+           WHERE id = $1 AND client_receipt_sent_at IS NULL`,
+          [paymentId]
+        );
+      }
+    } catch {
+      console.error("Payment completed but client receipt email failed.");
+    }
+  }
+
+  if (!notifyAdmin) {
+    return;
   }
 
   try {
@@ -186,6 +207,7 @@ export async function completeMpesaPayment(options: {
   receiptNumber?: string | null;
 }) {
   const client = await pool.connect();
+  let newlyCompleted = false;
 
   try {
     await client.query("BEGIN");
@@ -202,6 +224,7 @@ export async function completeMpesaPayment(options: {
 
     if (current.rows[0].status === "completed") {
       await client.query("COMMIT");
+      await sendPaymentSuccessEmails(options.paymentId, { notifyAdmin: false });
       return true;
     }
 
@@ -230,6 +253,7 @@ export async function completeMpesaPayment(options: {
     );
 
     await client.query("COMMIT");
+    newlyCompleted = true;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -237,7 +261,10 @@ export async function completeMpesaPayment(options: {
     client.release();
   }
 
-  await sendPaymentSuccessEmails(options.paymentId);
+  if (newlyCompleted) {
+    await sendPaymentSuccessEmails(options.paymentId);
+  }
+
   return true;
 }
 
