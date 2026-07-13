@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { saveAuthSession } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 
@@ -18,8 +18,17 @@ const initialState: FormState = {
   password: "",
 };
 
+function getSafeNextPath(next: string | null) {
+  if (!next || !next.startsWith("/") || next.startsWith("//")) {
+    return "/";
+  }
+
+  return next;
+}
+
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<FormState>(initialState);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,7 +57,7 @@ export default function LoginForm() {
       }
 
       saveAuthSession(data.token, data.user);
-      router.push("/");
+      router.push(getSafeNextPath(searchParams.get("next")));
       router.refresh();
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");

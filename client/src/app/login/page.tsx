@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import LoginForm from "@/components/auth/LoginForm";
 import Navbar from "@/components/layout/Navbar";
@@ -19,7 +20,9 @@ export default function LoginPage() {
               </p>
             </div>
 
-            <LoginForm />
+            <Suspense fallback={<p className="text-center text-sm text-gray-500">Loading...</p>}>
+              <LoginForm />
+            </Suspense>
 
             <p className="mt-6 text-center text-sm text-gray-500">
               <Link href="/" className="font-medium text-forest hover:underline">

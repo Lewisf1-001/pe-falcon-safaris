@@ -5,9 +5,14 @@ import {
   AdminAuthenticatedRequest,
   requireAdminAuth,
 } from "../middleware/requireAdminAuth";
+import { SUPPORTED_CURRENCIES, toUsdExact } from "../services/currency";
 import { formatPackage } from "./packages";
 
 const router = Router();
+
+const PACKAGE_RETURNING = `id, slug, name, duration, ideal_for, destinations, highlights, includes,
+                 starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
+                 created_at, updated_at`;
 
 const packageBodySchema = z.object({
   slug: z
@@ -22,7 +27,8 @@ const packageBodySchema = z.object({
   destinations: z.array(z.string().trim().min(1)).min(1, "Add at least one destination"),
   highlights: z.array(z.string().trim().min(1)).min(1, "Add at least one highlight"),
   includes: z.array(z.string().trim().min(1)).min(1, "Add at least one included item"),
-  startingPriceUsd: z.number().int().positive("Price must be greater than zero"),
+  startingPrice: z.number().positive("Price must be greater than zero"),
+  priceCurrency: z.enum(SUPPORTED_CURRENCIES),
   priceNote: z.string().trim().max(255).optional().nullable(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
@@ -34,7 +40,8 @@ router.get("/", async (_req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT id, slug, name, duration, ideal_for, destinations, highlights, includes,
-              starting_price_usd, price_note, is_active, sort_order, created_at, updated_at
+              starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
+              created_at, updated_at
        FROM packages
        ORDER BY sort_order ASC, name ASC`
     );
@@ -57,15 +64,15 @@ router.post("/", async (req: AdminAuthenticatedRequest, res, next) => {
     }
 
     const data = parsed.data;
+    const startingPriceUsd = toUsdExact(data.startingPrice, data.priceCurrency);
 
     const result = await pool.query(
       `INSERT INTO packages (
          slug, name, duration, ideal_for, destinations, highlights, includes,
-         starting_price_usd, price_note, is_active, sort_order
+         starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, slug, name, duration, ideal_for, destinations, highlights, includes,
-                 starting_price_usd, price_note, is_active, sort_order, created_at, updated_at`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING ${PACKAGE_RETURNING}`,
       [
         data.slug,
         data.name,
@@ -74,7 +81,9 @@ router.post("/", async (req: AdminAuthenticatedRequest, res, next) => {
         JSON.stringify(data.destinations),
         JSON.stringify(data.highlights),
         JSON.stringify(data.includes),
-        data.startingPriceUsd,
+        data.startingPrice,
+        data.priceCurrency,
+        startingPriceUsd,
         data.priceNote ?? null,
         data.isActive ?? true,
         data.sortOrder ?? 0,
@@ -92,7 +101,7 @@ router.post("/", async (req: AdminAuthenticatedRequest, res, next) => {
 
 router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
   try {
-    const packageId = z.string().uuid().parse(req.params.id);
+    const packageId = z.coerce.number().int().positive().parse(req.params.id);
     const parsed = packageBodySchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -101,6 +110,7 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
     }
 
     const data = parsed.data;
+    const startingPriceUsd = toUsdExact(data.startingPrice, data.priceCurrency);
 
     const result = await pool.query(
       `UPDATE packages
@@ -111,14 +121,15 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
            destinations = $5,
            highlights = $6,
            includes = $7,
-           starting_price_usd = $8,
-           price_note = $9,
-           is_active = $10,
-           sort_order = $11,
+           starting_price = $8,
+           price_currency = $9,
+           starting_price_usd = $10,
+           price_note = $11,
+           is_active = $12,
+           sort_order = $13,
            updated_at = NOW()
-       WHERE id = $12
-       RETURNING id, slug, name, duration, ideal_for, destinations, highlights, includes,
-                 starting_price_usd, price_note, is_active, sort_order, created_at, updated_at`,
+       WHERE id = $14
+       RETURNING ${PACKAGE_RETURNING}`,
       [
         data.slug,
         data.name,
@@ -127,7 +138,9 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
         JSON.stringify(data.destinations),
         JSON.stringify(data.highlights),
         JSON.stringify(data.includes),
-        data.startingPriceUsd,
+        data.startingPrice,
+        data.priceCurrency,
+        startingPriceUsd,
         data.priceNote ?? null,
         data.isActive ?? true,
         data.sortOrder ?? 0,
@@ -154,7 +167,7 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
 
 router.delete("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
   try {
-    const packageId = z.string().uuid().parse(req.params.id);
+    const packageId = z.coerce.number().int().positive().parse(req.params.id);
 
     const result = await pool.query("DELETE FROM packages WHERE id = $1 RETURNING id", [
       packageId,

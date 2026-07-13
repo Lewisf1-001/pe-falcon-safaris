@@ -1,4 +1,7 @@
+"use client";
+
 import Button from "@/components/ui/Button";
+import FormattedPrice from "@/components/currency/FormattedPrice";
 import type { Destination } from "@/data/destinations";
 
 type DestinationCardProps = {
@@ -19,7 +22,9 @@ export default function DestinationCard({ destination }: DestinationCardProps) {
         </p>
 
         <div className="mt-4 flex items-center justify-between gap-4">
-          <span className="text-xl font-bold text-gold">${price}</span>
+          <span className="text-xl font-bold text-gold">
+            <FormattedPrice amountUsd={price} />
+          </span>
           <Button
             variant={featured ? "primary" : "outline"}
             href={`#destinations/${destination.id}`}
