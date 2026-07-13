@@ -62,15 +62,15 @@ Or double-click `start-dev.cmd` / `stop-dev.cmd` in File Explorer.
 | Client | http://localhost:3000 |
 | API | http://localhost:4000 |
 
-`start-dev.cmd` opens the client in your existing Opera window and brings it to the front.
+`start-dev.cmd` and `./start-servers.sh` open the client in your existing Chrome window and bring it to the front.
 
 **One-time setup** (enables refreshing an existing `localhost:3000` tab instead of opening a new one):
 
 ```cmd
-scripts\setup-opera-debug.cmd
+scripts\setup-chrome-debug.cmd
 ```
 
-Then close Opera completely and reopen it from the Start menu.
+Then close Chrome completely and reopen it from the Start menu.
 
 PowerShell versions are also available in `scripts/` if your execution policy allows them, or run:
 

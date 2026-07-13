@@ -7,34 +7,45 @@ const DEV_URLS = [
   { label: "admin", url: "http://localhost:3001/login" },
 ];
 
-const OPERA_DEBUG_PORT = 9224;
-const CDP_PORTS = [OPERA_DEBUG_PORT, 9333, 9225, 9226, 9227, 9228];
+const CHROME_DEBUG_PORT = 9222;
+const CDP_PORTS = [CHROME_DEBUG_PORT, 9223, 9224, 9225, 9226, 9227, 9228];
 const CDP_TIMEOUT_MS = 400;
 const SERVER_POLL_MS = 150;
 const SERVER_MAX_WAIT_MS = 45000;
 
-const OPERA_PATHS = [
-  `${process.env.LOCALAPPDATA}\\Programs\\Opera\\opera.exe`,
-  `${process.env.LOCALAPPDATA}\\Programs\\Opera GX\\opera.exe`,
-  `${process.env["ProgramFiles"]}\\Opera\\opera.exe`,
-  `${process.env["ProgramFiles(x86)"]}\\Opera\\opera.exe`,
-  `${process.env["ProgramFiles"]}\\Opera GX\\opera.exe`,
-  `${process.env["ProgramFiles(x86)"]}\\Opera GX\\opera.exe`,
-];
+const CHROME_PATHS =
+  process.platform === "darwin"
+    ? [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+      ]
+    : [
+        `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+        `${process.env["ProgramFiles"]}\\Google\\Chrome\\Application\\chrome.exe`,
+        `${process.env["ProgramFiles(x86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
+      ];
 
-const FOCUS_SCRIPT = path.join(__dirname, "focus-opera.ps1");
+const FOCUS_SCRIPT = path.join(__dirname, "focus-chrome.ps1");
 
-function findOperaExecutable() {
-  return OPERA_PATHS.find((candidate) => candidate && existsSync(candidate));
+function findChromeExecutable() {
+  return CHROME_PATHS.find((candidate) => candidate && existsSync(candidate));
 }
 
-function isOperaRunning() {
+function isChromeRunning() {
   try {
-    const output = execSync('tasklist /FI "IMAGENAME eq opera.exe" /NH', {
+    if (process.platform === "darwin") {
+      execSync('pgrep -x "Google Chrome"', {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return true;
+    }
+
+    const output = execSync('tasklist /FI "IMAGENAME eq chrome.exe" /NH', {
       encoding: "utf8",
       windowsHide: true,
     });
-    return output.toLowerCase().includes("opera.exe");
+    return output.toLowerCase().includes("chrome.exe");
   } catch {
     return false;
   }
@@ -48,13 +59,24 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function focusOperaWindow() {
-  execFile(
-    "powershell.exe",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", FOCUS_SCRIPT],
-    { windowsHide: true },
-    () => {}
-  );
+function focusChromeWindow() {
+  if (process.platform === "darwin") {
+    execFile(
+      "osascript",
+      ["-e", 'tell application "Google Chrome" to activate'],
+      () => {}
+    );
+    return;
+  }
+
+  if (process.platform === "win32" && existsSync(FOCUS_SCRIPT)) {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", FOCUS_SCRIPT],
+      { windowsHide: true },
+      () => {}
+    );
+  }
 }
 
 async function getBrowserVersion(port) {
@@ -95,19 +117,19 @@ async function getTargets(port) {
   }
 }
 
-async function isOperaCdp(port) {
+async function isChromeCdp(port) {
   try {
     const version = await getBrowserVersion(port);
     const browser = `${version.Browser || ""} ${version["User-Agent"] || ""}`.toLowerCase();
-    return browser.includes("opera");
+    return browser.includes("chrome") && !browser.includes("edg");
   } catch {
     return false;
   }
 }
 
-async function findOperaCdp() {
+async function findChromeCdp() {
   for (const port of CDP_PORTS) {
-    if (!(await isOperaCdp(port))) {
+    if (!(await isChromeCdp(port))) {
       continue;
     }
 
@@ -115,7 +137,7 @@ async function findOperaCdp() {
       const targets = await getTargets(port);
       return { port, targets };
     } catch {
-      // Try the next Opera debugging port.
+      // Try the next Chrome debugging port.
     }
   }
 
@@ -205,16 +227,16 @@ async function openTabInWindow(port, url) {
   await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`);
 }
 
-function openUrlInOpera(operaExe, url) {
-  spawn(operaExe, [url], {
+function openUrlInChrome(chromeExe, url) {
+  spawn(chromeExe, [url], {
     detached: true,
     stdio: "ignore",
     windowsHide: false,
   }).unref();
 }
 
-function launchOpera(operaExe, url) {
-  spawn(operaExe, [`--remote-debugging-port=${OPERA_DEBUG_PORT}`, url], {
+function launchChrome(chromeExe, url) {
+  spawn(chromeExe, [`--remote-debugging-port=${CHROME_DEBUG_PORT}`, url], {
     detached: true,
     stdio: "ignore",
     windowsHide: false,
@@ -245,16 +267,28 @@ async function openDevUrlsWithCdp(cdp) {
 
   for (const entry of DEV_URLS) {
     const action = await openOrRefreshTab(cdp.port, targets, entry.url);
-    console.log(`${action === "refreshed" ? "Refreshed" : "Opened"} ${entry.label} URL in Opera.`);
+    console.log(`${action === "refreshed" ? "Refreshed" : "Opened"} ${entry.label} URL in Chrome.`);
     targets = await getTargets(cdp.port);
   }
 }
 
-async function main() {
-  const operaExe = findOperaExecutable();
+function setupHint() {
+  if (process.platform === "win32") {
+    return "Run scripts\\setup-chrome-debug.cmd once to enable tab refresh.";
+  }
 
-  if (!operaExe) {
-    console.log("Opera not found. Open these URLs manually:");
+  if (process.platform === "darwin") {
+    return "Quit Chrome completely, then reopen it with remote debugging enabled to refresh existing tabs.";
+  }
+
+  return "";
+}
+
+async function main() {
+  const chromeExe = findChromeExecutable();
+
+  if (!chromeExe) {
+    console.log("Chrome not found. Open these URLs manually:");
     for (const entry of DEV_URLS) {
       console.log(`  ${entry.label}: ${entry.url}`);
     }
@@ -267,44 +301,47 @@ async function main() {
     console.log("Timed out waiting for dev servers. Opening URLs anyway...");
   }
 
-  const cdp = await findOperaCdp();
+  const cdp = await findChromeCdp();
 
   if (cdp) {
     await openDevUrlsWithCdp(cdp);
-    focusOperaWindow();
+    focusChromeWindow();
     return;
   }
 
-  if (isOperaRunning()) {
+  if (isChromeRunning()) {
     for (const entry of DEV_URLS) {
-      openUrlInOpera(operaExe, entry.url);
+      openUrlInChrome(chromeExe, entry.url);
       await sleep(300);
     }
 
-    focusOperaWindow();
-    console.log("Opened client and admin URLs in existing Opera window.");
-    console.log("Run scripts\\setup-opera-debug.cmd once to enable tab refresh.");
+    focusChromeWindow();
+    console.log("Opened client and admin URLs in existing Chrome window.");
+    const hint = setupHint();
+    if (hint) {
+      console.log(hint);
+    }
     return;
   }
 
-  launchOpera(operaExe, DEV_URLS[0].url);
+  launchChrome(chromeExe, DEV_URLS[0].url);
   await sleep(800);
 
-  const freshCdp = await findOperaCdp();
+  const freshCdp = await findChromeCdp();
   if (freshCdp) {
     for (const entry of DEV_URLS.slice(1)) {
       await openTabInWindow(freshCdp.port, entry.url);
-      console.log(`Opened ${entry.label} URL in Opera.`);
+      console.log(`Opened ${entry.label} URL in Chrome.`);
     }
   } else {
     for (const entry of DEV_URLS.slice(1)) {
-      openUrlInOpera(operaExe, entry.url);
+      openUrlInChrome(chromeExe, entry.url);
       await sleep(300);
     }
   }
 
-  focusOperaWindow();
-  console.log("Opened client and admin URLs in Opera.");
+  focusChromeWindow();
+  console.log("Opened client and admin URLs in Chrome.");
 }
 
 main().catch((error) => {

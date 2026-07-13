@@ -1,7 +1,7 @@
-Write-Host "Setting up Opera for tab refresh support..."
+Write-Host "Setting up Chrome for tab refresh support..."
 Write-Host ""
 
-$debugFlag = "--remote-debugging-port=9224"
+$debugFlag = "--remote-debugging-port=9222"
 $searchPaths = @(
     "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
     "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
@@ -19,7 +19,7 @@ foreach ($root in $searchPaths) {
             $shortcut = $shell.CreateShortcut($_.FullName)
             $target = $shortcut.TargetPath
 
-            if ($target -notmatch "opera\.exe$") { return }
+            if ($target -notmatch "chrome\.exe$") { return }
 
             if ($shortcut.Arguments -match "remote-debugging-port") {
                 Write-Host "Already configured: $($_.FullName)"
@@ -39,10 +39,10 @@ foreach ($root in $searchPaths) {
 
 Write-Host ""
 if ($updated) {
-    Write-Host "Done. Close Opera completely, then reopen it from the Start menu."
+    Write-Host "Done. Close Chrome completely, then reopen it from the Start menu."
     Write-Host "After that, start-dev.cmd will refresh your existing localhost:3000 tab."
 } else {
-    Write-Host "Could not find an Opera shortcut automatically."
-    Write-Host "Add this to your Opera shortcut target manually:"
+    Write-Host "Could not find a Chrome shortcut automatically."
+    Write-Host "Add this to your Chrome shortcut target manually:"
     Write-Host "  $debugFlag"
 }
