@@ -68,14 +68,14 @@ const changePasswordSchema = z
   });
 
 function formatUser(user: {
-  id: string;
+  id: number;
   first_name: string;
   last_name: string;
   email: string;
   email_verified: boolean;
 }) {
   return {
-    id: user.id,
+    id: Number(user.id),
     firstName: user.first_name,
     lastName: user.last_name,
     email: user.email,
@@ -120,7 +120,7 @@ router.post("/login", async (req, res, next) => {
     }
 
     const token = signAuthToken({
-      userId: user.id,
+      userId: Number(user.id),
       email: user.email,
     });
 

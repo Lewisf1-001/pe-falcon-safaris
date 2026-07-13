@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
-import Button from "@/components/ui/Button";
+import BookSafariButton from "@/components/booking/BookSafariButton";
+import FormattedPrice from "@/components/currency/FormattedPrice";
 import { fetchPackageBySlug } from "@/lib/packages";
 
 type PackageDetailPageProps = {
@@ -65,14 +66,17 @@ export default async function PackageDetailPage({ params }: PackageDetailPagePro
             <div className="mt-10 flex flex-col gap-4 border-t border-gray-100 pt-8 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm text-gray-500">Starting from</p>
-                <p className="text-3xl font-bold text-gold">USD {safariPackage.startingPriceUsd}</p>
+                <p className="text-3xl font-bold text-gold">
+                  <FormattedPrice
+                    amount={safariPackage.startingPrice}
+                    fromCurrency={safariPackage.priceCurrency}
+                  />
+                </p>
                 {safariPackage.priceNote && (
                   <p className="mt-1 text-sm text-gray-500">per person ({safariPackage.priceNote})</p>
                 )}
               </div>
-              <Button variant="primary" href="/register" className="px-6 py-3">
-                Book this safari
-              </Button>
+              <BookSafariButton slug={safariPackage.slug} />
             </div>
           </div>
         </div>

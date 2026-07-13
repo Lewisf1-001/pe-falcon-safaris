@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS packages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id SERIAL PRIMARY KEY,
   slug VARCHAR(120) NOT NULL UNIQUE,
   name VARCHAR(255) NOT NULL,
   duration VARCHAR(100) NOT NULL,
@@ -16,6 +16,24 @@ CREATE TABLE IF NOT EXISTS packages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_active_sort ON packages (is_active, sort_order);
+
+-- Later migrations may add NOT NULL columns; defaults keep re-seed inserts valid.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'packages' AND column_name = 'starting_price'
+  ) THEN
+    ALTER TABLE packages ALTER COLUMN starting_price SET DEFAULT 0;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'packages' AND column_name = 'price_currency'
+  ) THEN
+    ALTER TABLE packages ALTER COLUMN price_currency SET DEFAULT 'USD';
+  END IF;
+END $$;
 
 INSERT INTO packages (
   slug,
@@ -55,3 +73,16 @@ VALUES
     2
   )
 ON CONFLICT (slug) DO NOTHING;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'packages' AND column_name = 'starting_price'
+  ) THEN
+    UPDATE packages
+    SET starting_price = starting_price_usd
+    WHERE starting_price IS NULL OR starting_price = 0;
+  END IF;
+END $$;
+

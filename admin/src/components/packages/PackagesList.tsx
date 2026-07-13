@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useCurrency } from "@/components/currency/CurrencyProvider";
 import { API_URL, getAdminAuthHeaders } from "@/lib/api";
 import type { SafariPackage } from "@/types/package";
 
@@ -10,11 +11,12 @@ type PackagesListProps = {
 };
 
 export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
+  const { currency, convertBetween, formatInCurrency } = useCurrency();
   const [packages, setPackages] = useState<SafariPackage[]>([]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadPackages = useCallback(async () => {
     setIsLoading(true);
@@ -43,7 +45,7 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
     loadPackages();
   }, [loadPackages, reloadKey]);
 
-  async function handleDelete(packageId: string, name: string) {
+  async function handleDelete(packageId: number, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) {
       return;
     }
@@ -99,7 +101,7 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
             <tr className="border-b border-gray-100 text-gray-500">
               <th className="px-2 py-3 font-medium">Package</th>
               <th className="px-2 py-3 font-medium">Duration</th>
-              <th className="px-2 py-3 font-medium">Price (USD)</th>
+              <th className="px-2 py-3 font-medium">Price ({currency})</th>
               <th className="px-2 py-3 font-medium">Status</th>
               <th className="px-2 py-3 font-medium" />
             </tr>
@@ -112,7 +114,12 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
                   <p className="text-xs text-gray-500">/{pkg.slug}</p>
                 </td>
                 <td className="px-2 py-4 text-gray-600">{pkg.duration}</td>
-                <td className="px-2 py-4 text-gray-600">{pkg.startingPriceUsd}</td>
+                <td className="px-2 py-4 text-gray-600">
+                  {formatInCurrency(
+                    convertBetween(pkg.startingPrice, pkg.priceCurrency, currency),
+                    currency
+                  )}
+                </td>
                 <td className="px-2 py-4">
                   <span
                     className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${

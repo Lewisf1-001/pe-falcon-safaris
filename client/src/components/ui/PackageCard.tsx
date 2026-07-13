@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Button from "@/components/ui/Button";
+import FormattedPrice from "@/components/currency/FormattedPrice";
 import type { SafariPackage } from "@/types/package";
 
 type PackageCardProps = {
@@ -26,7 +27,12 @@ export default function PackageCard({ package: safariPackage }: PackageCardProps
         <div className="mt-auto flex items-end justify-between gap-4 pt-5">
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">Starting from</p>
-            <p className="text-xl font-bold text-gold">USD {safariPackage.startingPriceUsd}</p>
+            <p className="text-xl font-bold text-gold">
+              <FormattedPrice
+                amount={safariPackage.startingPrice}
+                fromCurrency={safariPackage.priceCurrency}
+              />
+            </p>
           </div>
           <Button variant="outline" href={`/packages/${safariPackage.slug}`} className="px-4 py-2 text-sm">
             View Details

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import CurrencySwitcher from "@/components/currency/CurrencySwitcher";
 import { clearAdminSession, getAdminUser } from "@/lib/auth";
 import { useEffect, useState } from "react";
 
@@ -59,16 +60,19 @@ export default function AdminSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto border-t border-white/10 pt-4">
-        <p className="px-3 text-xs text-white/60">Signed in as</p>
-        <p className="px-3 text-sm font-medium text-white">{username}</p>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="mt-3 w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/80 transition-colors hover:bg-forest-light/60 hover:text-white"
-        >
-          Sign out
-        </button>
+      <div className="mt-auto space-y-4 border-t border-white/10 pt-4">
+        <CurrencySwitcher />
+        <div>
+          <p className="px-3 text-xs text-white/60">Signed in as</p>
+          <p className="px-3 text-sm font-medium text-white">{username}</p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="mt-3 w-full rounded-md px-3 py-2.5 text-left text-sm font-medium text-white/80 transition-colors hover:bg-forest-light/60 hover:text-white"
+          >
+            Sign out
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -49,7 +49,7 @@ npm run dev *>&1 | Tee-Object -FilePath '$LogFile'
     }
 }
 
-function Open-OperaClient {
+function Open-ChromeClient {
     $nodeDir = Join-Path $env:ProgramFiles "nodejs"
     if (Test-Path $nodeDir) {
         $env:Path = "$nodeDir;$env:Path"
@@ -57,7 +57,7 @@ function Open-OperaClient {
 
     $openScript = Join-Path $PSScriptRoot "open-client-url.cjs"
     if (Test-Path $openScript) {
-        Write-Host "Opening client in Opera..."
+        Write-Host "Opening client in Chrome..."
         & node $openScript
     } else {
         Write-Host "Open this URL manually: http://localhost:3000"
@@ -105,7 +105,7 @@ $state = @{
 
 $state | ConvertTo-Json -Depth 4 | Set-Content $StateFile -Encoding UTF8
 
-Open-OperaClient
+Open-ChromeClient
 
 Write-Host ""
 Write-Host "PE Falcon Safaris dev servers started."

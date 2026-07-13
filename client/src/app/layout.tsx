@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { CurrencyProvider } from "@/components/currency/CurrencyProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -21,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} antialiased`} suppressHydrationWarning>
-        {children}
+        <CurrencyProvider>{children}</CurrencyProvider>
       </body>
     </html>
   );

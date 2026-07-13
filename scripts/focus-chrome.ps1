@@ -4,7 +4,7 @@ Add-Type @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
-public class OperaWindow {
+public class ChromeWindow {
     public delegate bool EnumProc(IntPtr hWnd, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc lpEnumFunc, IntPtr lParam);
     [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -20,7 +20,7 @@ public class OperaWindow {
         if (string.IsNullOrWhiteSpace(title)) return true;
         if (title.IndexOf("localhost:3000", StringComparison.OrdinalIgnoreCase) >= 0 ||
             title.IndexOf("PE Falcon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            title.IndexOf("Opera", StringComparison.OrdinalIgnoreCase) >= 0) {
+            title.IndexOf("Google Chrome", StringComparison.OrdinalIgnoreCase) >= 0) {
             Match = hWnd;
             return false;
         }
@@ -29,19 +29,19 @@ public class OperaWindow {
 }
 "@
 
-[OperaWindow]::EnumWindows([OperaWindow+EnumProc]{ param($h, $l) [OperaWindow]::Find($h, $l) }, [IntPtr]::Zero) | Out-Null
+[ChromeWindow]::EnumWindows([ChromeWindow+EnumProc]{ param($h, $l) [ChromeWindow]::Find($h, $l) }, [IntPtr]::Zero) | Out-Null
 
-if ([OperaWindow]::Match -ne [IntPtr]::Zero) {
-    [OperaWindow]::ShowWindow([OperaWindow]::Match, 9) | Out-Null
-    [OperaWindow]::SetForegroundWindow([OperaWindow]::Match) | Out-Null
+if ([ChromeWindow]::Match -ne [IntPtr]::Zero) {
+    [ChromeWindow]::ShowWindow([ChromeWindow]::Match, 9) | Out-Null
+    [ChromeWindow]::SetForegroundWindow([ChromeWindow]::Match) | Out-Null
     exit 0
 }
 
-$opera = Get-Process opera -ErrorAction SilentlyContinue |
+$chrome = Get-Process chrome -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
     Select-Object -First 1
 
-if ($opera) {
-    [OperaWindow]::ShowWindow($opera.MainWindowHandle, 9) | Out-Null
-    [OperaWindow]::SetForegroundWindow($opera.MainWindowHandle) | Out-Null
+if ($chrome) {
+    [ChromeWindow]::ShowWindow($chrome.MainWindowHandle, 9) | Out-Null
+    [ChromeWindow]::SetForegroundWindow($chrome.MainWindowHandle) | Out-Null
 }

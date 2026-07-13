@@ -1,5 +1,7 @@
+export type CurrencyCode = "USD" | "KES" | "EUR" | "GBP";
+
 export type SafariPackage = {
-  id: string;
+  id: number;
   slug: string;
   name: string;
   duration: string;
@@ -7,6 +9,8 @@ export type SafariPackage = {
   destinations: string[];
   highlights: string[];
   includes: string[];
+  startingPrice: number;
+  priceCurrency: CurrencyCode;
   startingPriceUsd: number;
   priceNote: string | null;
   isActive: boolean;
@@ -21,13 +25,16 @@ export type PackageFormState = {
   destinations: string;
   highlights: string;
   includes: string;
-  startingPriceUsd: string;
+  startingPrice: string;
   priceNote: string;
   isActive: boolean;
   sortOrder: string;
 };
 
-export function packageToFormState(pkg: SafariPackage): PackageFormState {
+export function packageToFormState(
+  pkg: SafariPackage,
+  startingPriceDisplay: string | number = pkg.startingPrice
+): PackageFormState {
   return {
     slug: pkg.slug,
     name: pkg.name,
@@ -36,7 +43,7 @@ export function packageToFormState(pkg: SafariPackage): PackageFormState {
     destinations: pkg.destinations.join("\n"),
     highlights: pkg.highlights.join("\n"),
     includes: pkg.includes.join("\n"),
-    startingPriceUsd: String(pkg.startingPriceUsd),
+    startingPrice: String(startingPriceDisplay),
     priceNote: pkg.priceNote ?? "",
     isActive: pkg.isActive,
     sortOrder: String(pkg.sortOrder),
@@ -51,7 +58,7 @@ export const emptyPackageFormState: PackageFormState = {
   destinations: "",
   highlights: "",
   includes: "",
-  startingPriceUsd: "",
+  startingPrice: "",
   priceNote: "",
   isActive: true,
   sortOrder: "0",
@@ -72,7 +79,11 @@ export function slugifyName(name: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function formStateToPayload(form: PackageFormState) {
+export function formStateToPayload(
+  form: PackageFormState,
+  startingPrice: number,
+  priceCurrency: CurrencyCode
+) {
   return {
     slug: form.slug.trim(),
     name: form.name.trim(),
@@ -81,7 +92,8 @@ export function formStateToPayload(form: PackageFormState) {
     destinations: linesToArray(form.destinations),
     highlights: linesToArray(form.highlights),
     includes: linesToArray(form.includes),
-    startingPriceUsd: Number(form.startingPriceUsd),
+    startingPrice,
+    priceCurrency,
     priceNote: form.priceNote.trim() || null,
     isActive: form.isActive,
     sortOrder: Number(form.sortOrder) || 0,
