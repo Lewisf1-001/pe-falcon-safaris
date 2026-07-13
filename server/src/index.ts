@@ -5,7 +5,13 @@ import authRoutes from "./routes/auth";
 import adminAuthRoutes from "./routes/adminAuth";
 import adminUsersRoutes from "./routes/adminUsers";
 import adminPackagesRoutes from "./routes/adminPackages";
+import adminBookingsRoutes from "./routes/adminBookings";
+import adminPaymentsRoutes from "./routes/adminPayments";
 import packagesRoutes from "./routes/packages";
+import bookingsRoutes from "./routes/bookings";
+import paymentsRoutes from "./routes/payments";
+import mpesaRoutes from "./routes/mpesa";
+import currencyRoutes from "./routes/currency";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -35,9 +41,15 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/packages", packagesRoutes);
+app.use("/api/bookings", bookingsRoutes);
+app.use("/api/payments", paymentsRoutes);
+app.use("/api/mpesa", mpesaRoutes);
+app.use("/api/currency", currencyRoutes);
 app.use("/api/admin/auth", adminAuthRoutes);
 app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/packages", adminPackagesRoutes);
+app.use("/api/admin/bookings", adminBookingsRoutes);
+app.use("/api/admin/payments", adminPaymentsRoutes);
 app.use(errorHandler);
 
 app.listen(port, () => {

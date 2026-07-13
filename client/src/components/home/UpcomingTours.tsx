@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import FormattedPrice from "@/components/currency/FormattedPrice";
 import { upcomingTours, UpcomingTour } from "@/data/upcomingTours";
 
 const seatsToneStyles: Record<UpcomingTour["seatsTone"], string> = {
@@ -37,7 +40,9 @@ export default function UpcomingTours() {
                         {tour.seatsLeft} left
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-forest">${tour.price}</td>
+                    <td className="px-5 py-4 font-semibold text-forest">
+                      <FormattedPrice amountUsd={tour.price} />
+                    </td>
                     <td className="px-5 py-4">
                       <Link
                         href="/register"

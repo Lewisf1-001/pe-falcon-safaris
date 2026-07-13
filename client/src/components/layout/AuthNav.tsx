@@ -30,6 +30,9 @@ export default function AuthNav() {
         >
           Hi, {user.firstName}
         </Link>
+        <Button variant="ghost" href="/bookings" className="hidden px-4 py-2 sm:inline-flex">
+          My bookings
+        </Button>
         <Button variant="ghost" href="/profile" className="px-4 py-2 sm:hidden">
           Account
         </Button>

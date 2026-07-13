@@ -1,7 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useCurrency } from "@/components/currency/CurrencyProvider";
 import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { convertAmount, type CurrencyCode } from "@/lib/currency";
 import {
   PackageFormState,
   SafariPackage,
@@ -18,20 +20,61 @@ type PackageFormProps = {
 };
 
 export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: PackageFormProps) {
+  const { currency, rates, formatInCurrency } = useCurrency();
   const [form, setForm] = useState<PackageFormState>(emptyPackageFormState);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const previousCurrency = useRef<CurrencyCode>(currency);
 
   useEffect(() => {
     if (editingPackage) {
-      setForm(packageToFormState(editingPackage));
+      const displayPrice = convertAmount(
+        editingPackage.startingPrice,
+        editingPackage.priceCurrency,
+        currency,
+        rates
+      );
+      setForm(packageToFormState(editingPackage, displayPrice));
     } else {
       setForm(emptyPackageFormState);
     }
     setError("");
     setSuccess("");
+    previousCurrency.current = currency;
+    // Only reset when the selected package changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [editingPackage]);
+
+  useEffect(() => {
+    if (previousCurrency.current === currency) {
+      return;
+    }
+
+    const fromCurrency = previousCurrency.current;
+    previousCurrency.current = currency;
+
+    if (editingPackage) {
+      const displayPrice = convertAmount(
+        editingPackage.startingPrice,
+        editingPackage.priceCurrency,
+        currency,
+        rates
+      );
+      setForm((prev) => ({ ...prev, startingPrice: String(displayPrice) }));
+      return;
+    }
+
+    setForm((prev) => {
+      const amount = Number(prev.startingPrice);
+      if (!prev.startingPrice.trim() || !Number.isFinite(amount) || amount <= 0) {
+        return prev;
+      }
+
+      const nextDisplay = convertAmount(amount, fromCurrency, currency, rates);
+      return { ...prev, startingPrice: String(nextDisplay) };
+    });
+  }, [currency, rates, editingPackage]);
 
   function handleChange<K extends keyof PackageFormState>(field: K, value: PackageFormState[K]) {
     setForm((prev) => {
@@ -51,7 +94,16 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
     setSuccess("");
     setIsSubmitting(true);
 
-    const payload = formStateToPayload(form);
+    const startingPrice = Number(form.startingPrice);
+
+    if (!Number.isFinite(startingPrice) || startingPrice <= 0) {
+      setError("Enter a valid starting price.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    // Save the amount in the admin's working currency — no forced USD rounding.
+    const payload = formStateToPayload(form, startingPrice, currency);
     const isEditing = Boolean(editingPackage);
 
     try {
@@ -95,7 +147,8 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
           <p className="mt-1 text-sm text-gray-500">
             {editingPackage
               ? "Update package details shown on the public website."
-              : "Add a new package for clients to browse and book."}
+              : "Add a new package for clients to browse and book."}{" "}
+            Prices are saved in {currency}.
           </p>
         </div>
         {editingPackage && (
@@ -208,18 +261,24 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
-            <label htmlFor="startingPriceUsd" className="mb-1.5 block text-sm font-medium text-forest">
-              Starting price (USD)
+            <label htmlFor="startingPrice" className="mb-1.5 block text-sm font-medium text-forest">
+              Starting price ({currency})
             </label>
             <input
-              id="startingPriceUsd"
+              id="startingPrice"
               type="number"
-              min={1}
+              min={currency === "KES" ? 1 : 0.01}
+              step={currency === "KES" || currency === "USD" ? 1 : 0.01}
               required
-              value={form.startingPriceUsd}
-              onChange={(e) => handleChange("startingPriceUsd", e.target.value)}
+              value={form.startingPrice}
+              onChange={(e) => handleChange("startingPrice", e.target.value)}
               className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
             />
+            {form.startingPrice.trim() && Number(form.startingPrice) > 0 && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                Will be saved as {formatInCurrency(Number(form.startingPrice), currency)}
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="priceNote" className="mb-1.5 block text-sm font-medium text-forest">

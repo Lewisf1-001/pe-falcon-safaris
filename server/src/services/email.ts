@@ -273,3 +273,336 @@ export async function sendAdminInviteEmail(
     throw new Error("Unable to send invite email. Please try again later.");
   }
 }
+
+export type BookingEmailDetails = {
+  packageName: string;
+  travelDate: string;
+  guests: number;
+  totalPriceUsd: number;
+  status: string;
+  notes?: string | null;
+};
+
+export type AdminBookingNotificationDetails = BookingEmailDetails & {
+  clientName: string;
+  clientEmail: string;
+};
+
+export async function sendBookingConfirmationEmail(
+  email: string,
+  firstName: string,
+  booking: BookingEmailDetails
+) {
+  const bookingsUrl = `${CLIENT_URL}/bookings`;
+  const subject = "Your PE Falcon Safaris booking request";
+  const text = [
+    `Hi ${firstName},`,
+    "",
+    "Thank you for booking with PE Falcon Safaris.",
+    "We have received your reservation request:",
+    "",
+    `Package: ${booking.packageName}`,
+    `Travel date: ${booking.travelDate}`,
+    `Guests: ${booking.guests}`,
+    `Estimated total: USD ${booking.totalPriceUsd}`,
+    `Status: ${booking.status}`,
+    booking.notes ? `Notes: ${booking.notes}` : "",
+    "",
+    "Our team will review your request and follow up shortly.",
+    `You can view your bookings here: ${bookingsUrl}`,
+    "",
+    "If you did not make this booking, please contact us.",
+  ]
+    .filter((line) => line !== undefined)
+    .join("\n");
+
+  const html = `
+    <p>Hi ${firstName},</p>
+    <p>Thank you for booking with <strong>PE Falcon Safaris</strong>.</p>
+    <p>We have received your reservation request:</p>
+    <ul>
+      <li><strong>Package:</strong> ${booking.packageName}</li>
+      <li><strong>Travel date:</strong> ${booking.travelDate}</li>
+      <li><strong>Guests:</strong> ${booking.guests}</li>
+      <li><strong>Estimated total:</strong> USD ${booking.totalPriceUsd}</li>
+      <li><strong>Status:</strong> ${booking.status}</li>
+      ${booking.notes ? `<li><strong>Notes:</strong> ${booking.notes}</li>` : ""}
+    </ul>
+    <p>Our team will review your request and follow up shortly.</p>
+    <p><a href="${bookingsUrl}">View my bookings</a></p>
+    <p>If you did not make this booking, please contact us.</p>
+  `;
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log("SMTP not configured. Booking confirmation details:");
+    console.log(text);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: email,
+      subject,
+      text,
+      html,
+    });
+    console.log(`Booking confirmation email sent to ${email}`);
+  } catch (error) {
+    console.error("Failed to send booking confirmation email:", error);
+    console.log("Fallback booking confirmation details:");
+    console.log(text);
+    throw new Error("Unable to send booking confirmation email. Please try again later.");
+  }
+}
+
+export async function sendAdminBookingNotificationEmail(
+  adminEmails: string[],
+  booking: AdminBookingNotificationDetails
+) {
+  const recipients = [...new Set(adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean))];
+
+  if (recipients.length === 0) {
+    console.log("No admin email recipients configured for booking notifications.");
+    return;
+  }
+
+  const bookingsUrl = `${ADMIN_URL}/bookings`;
+  const subject = `New safari booking: ${booking.packageName}`;
+  const text = [
+    "A new safari booking request has been submitted.",
+    "",
+    `Client: ${booking.clientName}`,
+    `Email: ${booking.clientEmail}`,
+    `Package: ${booking.packageName}`,
+    `Travel date: ${booking.travelDate}`,
+    `Guests: ${booking.guests}`,
+    `Estimated total: USD ${booking.totalPriceUsd}`,
+    `Status: ${booking.status}`,
+    booking.notes ? `Notes: ${booking.notes}` : "",
+    "",
+    `Review bookings in the admin dashboard: ${bookingsUrl}`,
+  ]
+    .filter((line) => line !== undefined)
+    .join("\n");
+
+  const html = `
+    <p>A new safari booking request has been submitted.</p>
+    <ul>
+      <li><strong>Client:</strong> ${booking.clientName}</li>
+      <li><strong>Email:</strong> ${booking.clientEmail}</li>
+      <li><strong>Package:</strong> ${booking.packageName}</li>
+      <li><strong>Travel date:</strong> ${booking.travelDate}</li>
+      <li><strong>Guests:</strong> ${booking.guests}</li>
+      <li><strong>Estimated total:</strong> USD ${booking.totalPriceUsd}</li>
+      <li><strong>Status:</strong> ${booking.status}</li>
+      ${booking.notes ? `<li><strong>Notes:</strong> ${booking.notes}</li>` : ""}
+    </ul>
+    <p><a href="${bookingsUrl}">Review bookings in the admin dashboard</a></p>
+  `;
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log("SMTP not configured. Admin booking notification details:");
+    console.log(`Recipients: ${recipients.join(", ")}`);
+    console.log(text);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: recipients,
+      subject,
+      text,
+      html,
+    });
+    console.log(`Admin booking notification sent to ${recipients.join(", ")}`);
+  } catch (error) {
+    console.error("Failed to send admin booking notification:", error);
+    console.log("Fallback admin booking notification details:");
+    console.log(`Recipients: ${recipients.join(", ")}`);
+    console.log(text);
+    throw new Error("Unable to send admin booking notification email.");
+  }
+}
+
+export type PaymentEmailDetails = {
+  packageName: string;
+  travelDate: string;
+  amountUsd: number;
+  method: string;
+  methodLabel: string;
+  provider?: string | null;
+  phone?: string | null;
+  cardLast4?: string | null;
+  cardBrand?: string | null;
+  reference: string;
+};
+
+export type AdminPaymentNotificationDetails = PaymentEmailDetails & {
+  clientName: string;
+  clientEmail: string;
+};
+
+export async function sendPaymentReceiptEmail(
+  email: string,
+  firstName: string,
+  payment: PaymentEmailDetails
+) {
+  const bookingsUrl = `${CLIENT_URL}/bookings`;
+  const subject = "Payment received — PE Falcon Safaris";
+  const text = [
+    `Hi ${firstName},`,
+    "",
+    "We have received your payment for your safari booking.",
+    "",
+    `Package: ${payment.packageName}`,
+    `Travel date: ${payment.travelDate}`,
+    `Amount: USD ${payment.amountUsd}`,
+    `Payment method: ${payment.methodLabel}`,
+    payment.provider ? `Provider: ${payment.provider}` : "",
+    payment.phone ? `Mobile number: ${payment.phone}` : "",
+    payment.cardLast4
+      ? `Card: ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}`
+      : "",
+    `Reference: ${payment.reference}`,
+    "",
+    "Your booking is now confirmed.",
+    `View your bookings: ${bookingsUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <p>Hi ${firstName},</p>
+    <p>We have received your payment for your safari booking.</p>
+    <ul>
+      <li><strong>Package:</strong> ${payment.packageName}</li>
+      <li><strong>Travel date:</strong> ${payment.travelDate}</li>
+      <li><strong>Amount:</strong> USD ${payment.amountUsd}</li>
+      <li><strong>Payment method:</strong> ${payment.methodLabel}</li>
+      ${payment.provider ? `<li><strong>Provider:</strong> ${payment.provider}</li>` : ""}
+      ${payment.phone ? `<li><strong>Mobile number:</strong> ${payment.phone}</li>` : ""}
+      ${
+        payment.cardLast4
+          ? `<li><strong>Card:</strong> ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}</li>`
+          : ""
+      }
+      <li><strong>Reference:</strong> ${payment.reference}</li>
+    </ul>
+    <p>Your booking is now confirmed.</p>
+    <p><a href="${bookingsUrl}">View my bookings</a></p>
+  `;
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log("SMTP not configured. Payment receipt details:");
+    console.log(text);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: email,
+      subject,
+      text,
+      html,
+    });
+    console.log(`Payment receipt email sent to ${email}`);
+  } catch (error) {
+    console.error("Failed to send payment receipt email:", error);
+    console.log("Fallback payment receipt details:");
+    console.log(text);
+    throw new Error("Unable to send payment receipt email. Please try again later.");
+  }
+}
+
+export async function sendAdminPaymentNotificationEmail(
+  adminEmails: string[],
+  payment: AdminPaymentNotificationDetails
+) {
+  const recipients = [
+    ...new Set(adminEmails.map((email) => email.trim().toLowerCase()).filter(Boolean)),
+  ];
+
+  if (recipients.length === 0) {
+    console.log("No admin email recipients configured for payment notifications.");
+    return;
+  }
+
+  const paymentsUrl = `${ADMIN_URL}/payments`;
+  const subject = `Payment received: ${payment.packageName}`;
+  const text = [
+    "A client has paid for a safari booking.",
+    "",
+    `Client: ${payment.clientName}`,
+    `Email: ${payment.clientEmail}`,
+    `Package: ${payment.packageName}`,
+    `Travel date: ${payment.travelDate}`,
+    `Amount: USD ${payment.amountUsd}`,
+    `Payment method: ${payment.methodLabel}`,
+    payment.provider ? `Provider: ${payment.provider}` : "",
+    payment.phone ? `Mobile number: ${payment.phone}` : "",
+    payment.cardLast4
+      ? `Card: ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}`
+      : "",
+    `Reference: ${payment.reference}`,
+    "",
+    `Review payments in the admin dashboard: ${paymentsUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const html = `
+    <p>A client has paid for a safari booking.</p>
+    <ul>
+      <li><strong>Client:</strong> ${payment.clientName}</li>
+      <li><strong>Email:</strong> ${payment.clientEmail}</li>
+      <li><strong>Package:</strong> ${payment.packageName}</li>
+      <li><strong>Travel date:</strong> ${payment.travelDate}</li>
+      <li><strong>Amount:</strong> USD ${payment.amountUsd}</li>
+      <li><strong>Payment method:</strong> ${payment.methodLabel}</li>
+      ${payment.provider ? `<li><strong>Provider:</strong> ${payment.provider}</li>` : ""}
+      ${payment.phone ? `<li><strong>Mobile number:</strong> ${payment.phone}</li>` : ""}
+      ${
+        payment.cardLast4
+          ? `<li><strong>Card:</strong> ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}</li>`
+          : ""
+      }
+      <li><strong>Reference:</strong> ${payment.reference}</li>
+    </ul>
+    <p><a href="${paymentsUrl}">Review payments in the admin dashboard</a></p>
+  `;
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log("SMTP not configured. Admin payment notification details:");
+    console.log(`Recipients: ${recipients.join(", ")}`);
+    console.log(text);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: recipients,
+      subject,
+      text,
+      html,
+    });
+    console.log(`Admin payment notification sent to ${recipients.join(", ")}`);
+  } catch (error) {
+    console.error("Failed to send admin payment notification:", error);
+    console.log("Fallback admin payment notification details:");
+    console.log(`Recipients: ${recipients.join(", ")}`);
+    console.log(text);
+    throw new Error("Unable to send admin payment notification email.");
+  }
+}

@@ -3,7 +3,7 @@ import { verifyAuthToken } from "../services/jwt";
 
 export type AuthenticatedRequest = Request & {
   user?: {
-    userId: string;
+    userId: number;
     email: string;
   };
 };
@@ -19,7 +19,18 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 
   try {
     const payload = verifyAuthToken(token);
-    req.user = payload;
+    const userId = Number(payload.userId);
+
+    if (!Number.isInteger(userId) || userId < 1) {
+      return res.status(401).json({
+        error: "Your session is outdated. Please sign in again.",
+      });
+    }
+
+    req.user = {
+      userId,
+      email: payload.email,
+    };
     return next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired session." });

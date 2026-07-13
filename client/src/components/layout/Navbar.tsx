@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AuthNav from "@/components/layout/AuthNav";
+import CurrencySwitcher from "@/components/currency/CurrencySwitcher";
 
 const navLinks = [
   { label: "Home", href: "/" },
@@ -10,8 +11,8 @@ const navLinks = [
 export default function Navbar() {
   return (
     <header className="bg-forest">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 lg:px-8">
-        <Link href="/" className="text-lg font-bold tracking-tight text-gold">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4 lg:px-8">
+        <Link href="/" className="shrink-0 text-lg font-bold tracking-tight text-gold">
           PE Falcon Safaris
         </Link>
 
@@ -27,7 +28,10 @@ export default function Navbar() {
           ))}
         </nav>
 
-        <AuthNav />
+        <div className="flex items-center gap-3 sm:gap-4">
+          <CurrencySwitcher />
+          <AuthNav />
+        </div>
       </div>
     </header>
   );

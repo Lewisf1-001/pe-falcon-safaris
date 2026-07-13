@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { pool } from "../db/pool";
+import type { CurrencyCode } from "../services/currency";
 
 const router = Router();
 
-type PackageRow = {
-  id: string;
+export type PackageRow = {
+  id: number;
   slug: string;
   name: string;
   duration: string;
@@ -12,7 +13,9 @@ type PackageRow = {
   destinations: string[];
   highlights: string[];
   includes: string[];
-  starting_price_usd: number;
+  starting_price: number | string;
+  price_currency: string;
+  starting_price_usd: number | string;
   price_note: string | null;
   is_active: boolean;
   sort_order: number;
@@ -20,9 +23,13 @@ type PackageRow = {
   updated_at: string;
 };
 
+const PACKAGE_COLUMNS = `id, slug, name, duration, ideal_for, destinations, highlights, includes,
+              starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
+              created_at, updated_at`;
+
 export function formatPackage(row: PackageRow) {
   return {
-    id: row.id,
+    id: Number(row.id),
     slug: row.slug,
     name: row.name,
     duration: row.duration,
@@ -30,7 +37,9 @@ export function formatPackage(row: PackageRow) {
     destinations: row.destinations,
     highlights: row.highlights,
     includes: row.includes,
-    startingPriceUsd: row.starting_price_usd,
+    startingPrice: Number(row.starting_price),
+    priceCurrency: (row.price_currency || "USD") as CurrencyCode,
+    startingPriceUsd: Number(row.starting_price_usd),
     priceNote: row.price_note,
     isActive: row.is_active,
     sortOrder: row.sort_order,
@@ -42,8 +51,7 @@ export function formatPackage(row: PackageRow) {
 router.get("/", async (_req, res, next) => {
   try {
     const result = await pool.query<PackageRow>(
-      `SELECT id, slug, name, duration, ideal_for, destinations, highlights, includes,
-              starting_price_usd, price_note, is_active, sort_order, created_at, updated_at
+      `SELECT ${PACKAGE_COLUMNS}
        FROM packages
        WHERE is_active = TRUE
        ORDER BY sort_order ASC, name ASC`
@@ -60,8 +68,7 @@ router.get("/", async (_req, res, next) => {
 router.get("/:slug", async (req, res, next) => {
   try {
     const result = await pool.query<PackageRow>(
-      `SELECT id, slug, name, duration, ideal_for, destinations, highlights, includes,
-              starting_price_usd, price_note, is_active, sort_order, created_at, updated_at
+      `SELECT ${PACKAGE_COLUMNS}
        FROM packages
        WHERE slug = $1 AND is_active = TRUE`,
       [req.params.slug]
