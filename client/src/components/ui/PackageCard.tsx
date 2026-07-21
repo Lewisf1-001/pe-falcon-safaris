@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Image from "next/image";
 import Button from "@/components/ui/Button";
 import FormattedPrice from "@/components/currency/FormattedPrice";
 import type { SafariPackage } from "@/types/package";
@@ -9,10 +9,23 @@ type PackageCardProps = {
 
 export default function PackageCard({ package: safariPackage }: PackageCardProps) {
   const destinationPreview = safariPackage.destinations.slice(0, 2).join(" · ");
+  const coverImage = safariPackage.galleryImages?.[0];
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className="aspect-[4/3] bg-olive" aria-hidden="true" />
+      <div className="relative aspect-[4/3] bg-olive">
+        {coverImage ? (
+          <Image
+            src={coverImage.url}
+            alt={coverImage.alt}
+            fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 400px"
+            className="object-cover"
+          />
+        ) : (
+          <div className="h-full w-full bg-olive" aria-hidden="true" />
+        )}
+      </div>
 
       <div className="flex flex-1 flex-col p-5">
         <h3 className="text-lg font-bold text-forest">{safariPackage.name}</h3>

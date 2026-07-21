@@ -7,6 +7,7 @@ import adminUsersRoutes from "./routes/adminUsers";
 import adminPackagesRoutes from "./routes/adminPackages";
 import adminBookingsRoutes from "./routes/adminBookings";
 import adminPaymentsRoutes from "./routes/adminPayments";
+import adminClientsRoutes from "./routes/adminClients";
 import packagesRoutes from "./routes/packages";
 import bookingsRoutes from "./routes/bookings";
 import paymentsRoutes from "./routes/payments";
@@ -50,6 +51,7 @@ app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/packages", adminPackagesRoutes);
 app.use("/api/admin/bookings", adminBookingsRoutes);
 app.use("/api/admin/payments", adminPaymentsRoutes);
+app.use("/api/admin/clients", adminClientsRoutes);
 app.use(errorHandler);
 
 app.listen(port, () => {

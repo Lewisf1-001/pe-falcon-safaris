@@ -1,5 +1,10 @@
 export type CurrencyCode = "USD" | "KES" | "EUR" | "GBP";
 
+export type PackageGalleryImage = {
+  url: string;
+  alt: string;
+};
+
 export type SafariPackage = {
   id: number;
   slug: string;
@@ -9,6 +14,7 @@ export type SafariPackage = {
   destinations: string[];
   highlights: string[];
   includes: string[];
+  galleryImages: PackageGalleryImage[];
   startingPrice: number;
   priceCurrency: CurrencyCode;
   startingPriceUsd: number;
@@ -25,11 +31,38 @@ export type PackageFormState = {
   destinations: string;
   highlights: string;
   includes: string;
+  galleryImages: string;
   startingPrice: string;
   priceNote: string;
   isActive: boolean;
   sortOrder: string;
 };
+
+export function galleryImagesToText(images: PackageGalleryImage[]) {
+  return images.map((image) => `${image.url} | ${image.alt}`).join("\n");
+}
+
+export function textToGalleryImages(value: string): PackageGalleryImage[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf(" | ");
+      if (separatorIndex === -1) {
+        return null;
+      }
+
+      const url = line.slice(0, separatorIndex).trim();
+      const alt = line.slice(separatorIndex + 3).trim();
+      if (!url || !alt) {
+        return null;
+      }
+
+      return { url, alt };
+    })
+    .filter((item): item is PackageGalleryImage => item != null);
+}
 
 export function packageToFormState(
   pkg: SafariPackage,
@@ -43,6 +76,7 @@ export function packageToFormState(
     destinations: pkg.destinations.join("\n"),
     highlights: pkg.highlights.join("\n"),
     includes: pkg.includes.join("\n"),
+    galleryImages: galleryImagesToText(pkg.galleryImages ?? []),
     startingPrice: String(startingPriceDisplay),
     priceNote: pkg.priceNote ?? "",
     isActive: pkg.isActive,
@@ -58,6 +92,7 @@ export const emptyPackageFormState: PackageFormState = {
   destinations: "",
   highlights: "",
   includes: "",
+  galleryImages: "",
   startingPrice: "",
   priceNote: "",
   isActive: true,
@@ -92,6 +127,7 @@ export function formStateToPayload(
     destinations: linesToArray(form.destinations),
     highlights: linesToArray(form.highlights),
     includes: linesToArray(form.includes),
+    galleryImages: textToGalleryImages(form.galleryImages),
     startingPrice,
     priceCurrency,
     priceNote: form.priceNote.trim() || null,

@@ -259,6 +259,23 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
           </div>
         </div>
 
+        <div>
+          <label htmlFor="galleryImages" className="mb-1.5 block text-sm font-medium text-forest">
+            Gallery images (one per line: URL | Alt text)
+          </label>
+          <textarea
+            id="galleryImages"
+            rows={5}
+            value={form.galleryImages}
+            onChange={(e) => handleChange("galleryImages", e.target.value)}
+            placeholder="https://images.unsplash.com/photo-example | Elephants at sunrise in Amboseli"
+            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
+          />
+          <p className="mt-1.5 text-xs text-gray-500">
+            Use high-quality landscape images with descriptive alt text for accessibility.
+          </p>
+        </div>
+
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <label htmlFor="startingPrice" className="mb-1.5 block text-sm font-medium text-forest">
