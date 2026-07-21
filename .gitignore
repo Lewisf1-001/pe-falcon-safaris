@@ -13,6 +13,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Netlify local link state
+.netlify/
+
 # Build output
 dist/
 build/
