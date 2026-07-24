@@ -1,0 +1,15 @@
+# PE Falcon Safaris — admin panel (Next.js)
+# Used when this Netlify site's base directory is `admin`.
+
+[build]
+  command = "npm ci && npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Set in Netlify UI → Environment variables:
+# NEXT_PUBLIC_API_URL = https://pe-falcon-safaris-production.up.railway.app
