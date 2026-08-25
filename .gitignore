@@ -30,3 +30,4 @@ scripts/logs/*.log
 
 # Supabase local state
 .supabase/
+supabase/.temp/
