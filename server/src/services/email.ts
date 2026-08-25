@@ -1,13 +1,32 @@
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 
-const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_HOST =
+  process.env.SMTP_HOST ||
+  (process.env.SMTP_USER?.toLowerCase().includes("@gmail.com") ? "smtp.gmail.com" : undefined);
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS?.replace(/\s+/g, "");
 const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER || "noreply@pefalconsafaris.com";
+const RESEND_FROM = process.env.RESEND_FROM?.trim() || SMTP_FROM;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 const ADMIN_URL = process.env.ADMIN_URL || "http://localhost:3001";
+const RESEND_API_KEY = process.env.RESEND_API_KEY?.trim();
+const EMAIL_DELIVERY = (process.env.EMAIL_DELIVERY || "").toLowerCase();
+
+/** Railway Hobby/Trial blocks outbound SMTP — use Resend HTTPS or EMAIL_DELIVERY=disabled. */
+export function isEmailDeliveryDisabled() {
+  return EMAIL_DELIVERY === "disabled" || EMAIL_DELIVERY === "off" || EMAIL_DELIVERY === "none";
+}
+
+export function shouldSkipEmailVerification() {
+  return (
+    isEmailDeliveryDisabled() ||
+    process.env.EMAIL_SKIP_VERIFICATION === "true" ||
+    process.env.EMAIL_SKIP_VERIFICATION === "1"
+  );
+}
 
 function isSmtpConfigured() {
   return Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
@@ -18,7 +37,7 @@ function createTransporter() {
     return null;
   }
 
-  return nodemailer.createTransport({
+  const options: SMTPTransport.Options = {
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
@@ -26,11 +45,104 @@ function createTransporter() {
       user: SMTP_USER,
       pass: SMTP_PASS,
     },
-    family: 4,
+    connectionTimeout: 8_000,
+    greetingTimeout: 8_000,
+    socketTimeout: 12_000,
     tls: {
       minVersion: "TLSv1.2",
     },
+  };
+
+  return nodemailer.createTransport(options);
+}
+
+type DeliverEmailInput = {
+  to: string | string[];
+  subject: string;
+  text: string;
+  html: string;
+  fallbackUrl?: string;
+  fallbackLogLabel: string;
+  successLog: string;
+  failureMessage: string;
+};
+
+async function sendWithResend(input: DeliverEmailInput) {
+  const to = Array.isArray(input.to) ? input.to : [input.to];
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM,
+      to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+    }),
   });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Resend API ${response.status}: ${body}`);
+  }
+}
+
+async function deliverEmail(input: DeliverEmailInput) {
+  if (isEmailDeliveryDisabled()) {
+    console.log(`Email delivery disabled. ${input.fallbackLogLabel}`);
+    if (input.fallbackUrl) {
+      console.log(input.fallbackUrl);
+    }
+    return;
+  }
+
+  if (RESEND_API_KEY) {
+    try {
+      await sendWithResend(input);
+      console.log(input.successLog);
+      return;
+    } catch (error) {
+      console.error(`Failed to send email via Resend:`, error);
+      if (input.fallbackUrl) {
+        console.log(`Fallback link:`);
+        console.log(input.fallbackUrl);
+      }
+      throw new Error(input.failureMessage);
+    }
+  }
+
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log(`No email provider configured. ${input.fallbackLogLabel}`);
+    if (input.fallbackUrl) {
+      console.log(input.fallbackUrl);
+    }
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html,
+    });
+    console.log(input.successLog);
+  } catch (error) {
+    console.error(`Failed to send email via SMTP:`, error);
+    if (input.fallbackUrl) {
+      console.log(`Fallback link:`);
+      console.log(input.fallbackUrl);
+    }
+    throw new Error(
+      `${input.failureMessage} If this API runs on Railway Hobby/Trial, outbound SMTP is blocked — use Resend (RESEND_API_KEY) or set EMAIL_DELIVERY=disabled.`
+    );
+  }
 }
 
 export function createVerificationToken() {
@@ -93,29 +205,16 @@ export async function sendVerificationEmail(
     <p>If you did not create an account, you can ignore this email.</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Email verification link:");
-    console.log(verificationUrl);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Verification email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send verification email:", error);
-    console.log("Fallback verification link:");
-    console.log(verificationUrl);
-    throw new Error("Unable to send verification email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackUrl: verificationUrl,
+    fallbackLogLabel: "Email verification link:",
+    successLog: `Verification email sent to ${email}`,
+    failureMessage: "Unable to send verification email. Please try again later.",
+  });
 }
 
 export async function sendPasswordResetEmail(
@@ -145,29 +244,16 @@ export async function sendPasswordResetEmail(
     <p>If you did not request a password reset, you can ignore this email.</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Password reset link:");
-    console.log(resetUrl);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Password reset email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send password reset email:", error);
-    console.log("Fallback password reset link:");
-    console.log(resetUrl);
-    throw new Error("Unable to send password reset email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackUrl: resetUrl,
+    fallbackLogLabel: "Password reset link:",
+    successLog: `Password reset email sent to ${email}`,
+    failureMessage: "Unable to send password reset email. Please try again later.",
+  });
 }
 
 export async function sendAdminPasswordResetEmail(
@@ -197,29 +283,16 @@ export async function sendAdminPasswordResetEmail(
     <p>If you did not request a password reset, you can ignore this email.</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Admin password reset link:");
-    console.log(resetUrl);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Admin password reset email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send admin password reset email:", error);
-    console.log("Fallback admin password reset link:");
-    console.log(resetUrl);
-    throw new Error("Unable to send password reset email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackUrl: resetUrl,
+    fallbackLogLabel: "Admin password reset link:",
+    successLog: `Admin password reset email sent to ${email}`,
+    failureMessage: "Unable to send password reset email. Please try again later.",
+  });
 }
 
 export async function sendAdminInviteEmail(
@@ -249,29 +322,16 @@ export async function sendAdminInviteEmail(
     <p>If you were not expecting this invite, you can ignore this email.</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Admin invite link:");
-    console.log(inviteUrl);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Admin invite email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send admin invite email:", error);
-    console.log("Fallback admin invite link:");
-    console.log(inviteUrl);
-    throw new Error("Unable to send invite email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackUrl: inviteUrl,
+    fallbackLogLabel: "Admin invite link:",
+    successLog: `Admin invite email sent to ${email}`,
+    failureMessage: "Unable to send invite email. Please try again later.",
+  });
 }
 
 export type BookingEmailDetails = {
@@ -333,29 +393,15 @@ export async function sendBookingConfirmationEmail(
     <p>If you did not make this booking, please contact us.</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Booking confirmation details:");
-    console.log(text);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Booking confirmation email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send booking confirmation email:", error);
-    console.log("Fallback booking confirmation details:");
-    console.log(text);
-    throw new Error("Unable to send booking confirmation email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackLogLabel: "Booking confirmation details:",
+    successLog: `Booking confirmation email sent to ${email}`,
+    failureMessage: "Unable to send booking confirmation email. Please try again later.",
+  });
 }
 
 export async function sendAdminBookingNotificationEmail(
@@ -403,36 +449,21 @@ export async function sendAdminBookingNotificationEmail(
     <p><a href="${bookingsUrl}">Review bookings in the admin dashboard</a></p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Admin booking notification details:");
-    console.log(`Recipients: ${recipients.join(", ")}`);
-    console.log(text);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: recipients,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Admin booking notification sent to ${recipients.join(", ")}`);
-  } catch (error) {
-    console.error("Failed to send admin booking notification:", error);
-    console.log("Fallback admin booking notification details:");
-    console.log(`Recipients: ${recipients.join(", ")}`);
-    console.log(text);
-    throw new Error("Unable to send admin booking notification email.");
-  }
+  await deliverEmail({
+    to: recipients,
+    subject,
+    text,
+    html,
+    fallbackLogLabel: `Admin booking notification details (recipients: ${recipients.join(", ")}):`,
+    successLog: `Admin booking notification sent to ${recipients.join(", ")}`,
+    failureMessage: "Unable to send admin booking notification email.",
+  });
 }
 
 export type PaymentEmailDetails = {
   packageName: string;
   travelDate: string;
+  guests?: number;
   amountUsd: number;
   method: string;
   methodLabel: string;
@@ -441,6 +472,7 @@ export type PaymentEmailDetails = {
   cardLast4?: string | null;
   cardBrand?: string | null;
   reference: string;
+  bookingId?: number;
 };
 
 export type AdminPaymentNotificationDetails = PaymentEmailDetails & {
@@ -453,37 +485,44 @@ export async function sendPaymentReceiptEmail(
   firstName: string,
   payment: PaymentEmailDetails
 ) {
-  const bookingsUrl = `${CLIENT_URL}/bookings`;
-  const subject = "Payment received — PE Falcon Safaris";
+  const bookingUrl = payment.bookingId
+    ? `${CLIENT_URL}/bookings/${payment.bookingId}`
+    : `${CLIENT_URL}/bookings`;
+  const subject = "Payment confirmed — your safari reservation is complete";
   const text = [
     `Hi ${firstName},`,
     "",
-    "We have received your payment for your safari booking.",
+    "Your payment was received successfully. Your safari reservation is now complete and confirmed.",
     "",
     `Package: ${payment.packageName}`,
     `Travel date: ${payment.travelDate}`,
-    `Amount: USD ${payment.amountUsd}`,
+    payment.guests != null ? `Guests: ${payment.guests}` : "",
+    `Amount paid: USD ${payment.amountUsd}`,
     `Payment method: ${payment.methodLabel}`,
     payment.provider ? `Provider: ${payment.provider}` : "",
     payment.phone ? `Mobile number: ${payment.phone}` : "",
     payment.cardLast4
       ? `Card: ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}`
       : "",
-    `Reference: ${payment.reference}`,
+    `Payment reference: ${payment.reference}`,
     "",
-    "Your booking is now confirmed.",
-    `View your bookings: ${bookingsUrl}`,
+    "Keep this email as your payment confirmation.",
+    `View your booking: ${bookingUrl}`,
+    "",
+    "We look forward to hosting you on safari.",
+    "— PE Falcon Safaris",
   ]
     .filter(Boolean)
     .join("\n");
 
   const html = `
     <p>Hi ${firstName},</p>
-    <p>We have received your payment for your safari booking.</p>
+    <p><strong>Your payment was received successfully.</strong> Your safari reservation is now complete and confirmed.</p>
     <ul>
       <li><strong>Package:</strong> ${payment.packageName}</li>
       <li><strong>Travel date:</strong> ${payment.travelDate}</li>
-      <li><strong>Amount:</strong> USD ${payment.amountUsd}</li>
+      ${payment.guests != null ? `<li><strong>Guests:</strong> ${payment.guests}</li>` : ""}
+      <li><strong>Amount paid:</strong> USD ${payment.amountUsd}</li>
       <li><strong>Payment method:</strong> ${payment.methodLabel}</li>
       ${payment.provider ? `<li><strong>Provider:</strong> ${payment.provider}</li>` : ""}
       ${payment.phone ? `<li><strong>Mobile number:</strong> ${payment.phone}</li>` : ""}
@@ -492,35 +531,23 @@ export async function sendPaymentReceiptEmail(
           ? `<li><strong>Card:</strong> ${payment.cardBrand || "Card"} ending in ${payment.cardLast4}</li>`
           : ""
       }
-      <li><strong>Reference:</strong> ${payment.reference}</li>
+      <li><strong>Payment reference:</strong> ${payment.reference}</li>
     </ul>
-    <p>Your booking is now confirmed.</p>
-    <p><a href="${bookingsUrl}">View my bookings</a></p>
+    <p>Keep this email as your payment confirmation.</p>
+    <p><a href="${bookingUrl}">View your booking</a></p>
+    <p>We look forward to hosting you on safari.<br/>— PE Falcon Safaris</p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Payment receipt details:");
-    console.log(text);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: email,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Payment receipt email sent to ${email}`);
-  } catch (error) {
-    console.error("Failed to send payment receipt email:", error);
-    console.log("Fallback payment receipt details:");
-    console.log(text);
-    throw new Error("Unable to send payment receipt email. Please try again later.");
-  }
+  await deliverEmail({
+    to: email,
+    subject,
+    text,
+    html,
+    fallbackLogLabel: "Payment receipt details:",
+    successLog: `Payment receipt email sent to ${email}`,
+    failureMessage: "Unable to send payment receipt email. Please try again later.",
+  });
+  return true;
 }
 
 export async function sendAdminPaymentNotificationEmail(
@@ -580,29 +607,13 @@ export async function sendAdminPaymentNotificationEmail(
     <p><a href="${paymentsUrl}">Review payments in the admin dashboard</a></p>
   `;
 
-  const transporter = createTransporter();
-
-  if (!transporter) {
-    console.log("SMTP not configured. Admin payment notification details:");
-    console.log(`Recipients: ${recipients.join(", ")}`);
-    console.log(text);
-    return;
-  }
-
-  try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
-      to: recipients,
-      subject,
-      text,
-      html,
-    });
-    console.log(`Admin payment notification sent to ${recipients.join(", ")}`);
-  } catch (error) {
-    console.error("Failed to send admin payment notification:", error);
-    console.log("Fallback admin payment notification details:");
-    console.log(`Recipients: ${recipients.join(", ")}`);
-    console.log(text);
-    throw new Error("Unable to send admin payment notification email.");
-  }
+  await deliverEmail({
+    to: recipients,
+    subject,
+    text,
+    html,
+    fallbackLogLabel: `Admin payment notification details (recipients: ${recipients.join(", ")}):`,
+    successLog: `Admin payment notification sent to ${recipients.join(", ")}`,
+    failureMessage: "Unable to send admin payment notification email.",
+  });
 }

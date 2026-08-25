@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const quickLinks = [
-  { label: "Packages", href: "/#packages" },
+  { label: "Packages", href: "/packages" },
   { label: "Book Now", href: "/#book" },
   { label: "About Us", href: "/#about" },
 ];
@@ -18,7 +18,7 @@ export default function Footer() {
       <div className="mx-auto max-w-6xl px-6 py-12 lg:px-8">
         <div className="grid gap-10 md:grid-cols-3">
           <div>
-            <h3 className="text-lg font-bold text-gold">PE Falcon Safaris</h3>
+            <h3 className="font-calligraphy text-3xl text-gold">PE Falcon Safaris</h3>
             <div className="mt-4 space-y-2 text-sm text-white/85">
               <p>Nairobi, Kenya</p>
               <p>

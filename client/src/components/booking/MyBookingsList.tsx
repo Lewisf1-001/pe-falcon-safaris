@@ -66,7 +66,7 @@ export default function MyBookingsList() {
     return (
       <div className="rounded-xl border border-gray-100 bg-cream px-6 py-8 text-center">
         <p className="text-sm text-gray-600">You have not booked a safari yet.</p>
-        <Link href="/#packages" className="mt-3 inline-block text-sm font-medium text-forest hover:underline">
+        <Link href="/packages" className="mt-3 inline-block text-sm font-medium text-forest hover:underline">
           Browse safari packages
         </Link>
       </div>
@@ -103,7 +103,7 @@ export default function MyBookingsList() {
               {booking.status === "pending" && (
                 <Link
                   href={`/bookings/${booking.id}/pay`}
-                  className="rounded-md border border-gold bg-gold px-3 py-1.5 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+                  className="rounded-none border border-gold bg-gold px-3 py-1.5 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
                 >
                   Pay now
                 </Link>

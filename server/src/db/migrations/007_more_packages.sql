@@ -85,9 +85,11 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'packages' AND column_name = 'starting_price'
   ) THEN
-    UPDATE packages
-    SET starting_price = starting_price_usd
-    WHERE starting_price IS NULL OR starting_price = 0;
+    EXECUTE $sql$
+      UPDATE packages
+      SET starting_price = starting_price_usd
+      WHERE starting_price IS NULL OR starting_price = 0
+    $sql$;
   END IF;
 END $$;
 

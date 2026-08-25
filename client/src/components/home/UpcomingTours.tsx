@@ -46,7 +46,7 @@ export default function UpcomingTours() {
                     <td className="px-5 py-4">
                       <Link
                         href="/register"
-                        className="inline-flex rounded-md border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+                        className="inline-flex rounded-none border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
                       >
                         Book Now
                       </Link>

@@ -20,7 +20,7 @@ export default function BookSafariButton({ slug }: BookSafariButtonProps) {
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-md border border-gold bg-gold px-6 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+      className="inline-flex items-center justify-center rounded-none border border-gold bg-gold px-6 py-3 text-sm font-semibold tracking-[0.12em] uppercase text-forest transition-colors hover:bg-gold-hover"
     >
       Book this safari
     </Link>

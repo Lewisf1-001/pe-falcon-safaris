@@ -21,8 +21,12 @@ dist/
 build/
 .next/
 out/
+.netlify/
 *.log
 
 # Dev server state
 scripts/.dev-servers.json
 scripts/logs/*.log
+
+# Supabase local state
+.supabase/

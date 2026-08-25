@@ -12,6 +12,7 @@ import {
   packageToFormState,
   slugifyName,
 } from "@/types/package";
+import PackageGalleryUploader from "@/components/packages/PackageGalleryUploader";
 
 type PackageFormProps = {
   editingPackage: SafariPackage | null;
@@ -98,6 +99,12 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
 
     if (!Number.isFinite(startingPrice) || startingPrice <= 0) {
       setError("Enter a valid starting price.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (form.galleryImages.some((image) => !image.alt.trim())) {
+      setError("Add descriptive alt text for every gallery image.");
       setIsSubmitting(false);
       return;
     }
@@ -258,6 +265,11 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
             />
           </div>
         </div>
+
+        <PackageGalleryUploader
+          images={form.galleryImages}
+          onChange={(galleryImages) => handleChange("galleryImages", galleryImages)}
+        />
 
         <div className="grid gap-4 sm:grid-cols-3">
           <div>

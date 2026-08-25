@@ -1,8 +1,14 @@
 import { Router } from "express";
 import { pool } from "../db/pool";
 import type { CurrencyCode } from "../services/currency";
+import { normalizePackageImageUrl } from "../services/uploads";
 
 const router = Router();
+
+export type PackageGalleryImage = {
+  url: string;
+  alt: string;
+};
 
 export type PackageRow = {
   id: number;
@@ -13,6 +19,7 @@ export type PackageRow = {
   destinations: string[];
   highlights: string[];
   includes: string[];
+  gallery_images: PackageGalleryImage[] | null;
   starting_price: number | string;
   price_currency: string;
   starting_price_usd: number | string;
@@ -23,9 +30,36 @@ export type PackageRow = {
   updated_at: string;
 };
 
-const PACKAGE_COLUMNS = `id, slug, name, duration, ideal_for, destinations, highlights, includes,
+const PACKAGE_COLUMNS = `id, slug, name, duration, ideal_for, destinations, highlights, includes, gallery_images,
               starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
               created_at, updated_at`;
+
+function parseGalleryImages(value: unknown): PackageGalleryImage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const image = item as { url?: unknown; alt?: unknown };
+      if (typeof image.url !== "string" || typeof image.alt !== "string") {
+        return null;
+      }
+
+      const url = image.url.trim();
+      const alt = image.alt.trim();
+      if (!url || !alt) {
+        return null;
+      }
+
+      return { url: normalizePackageImageUrl(url), alt };
+    })
+    .filter((item): item is PackageGalleryImage => item != null);
+}
 
 export function formatPackage(row: PackageRow) {
   return {
@@ -37,6 +71,7 @@ export function formatPackage(row: PackageRow) {
     destinations: row.destinations,
     highlights: row.highlights,
     includes: row.includes,
+    galleryImages: parseGalleryImages(row.gallery_images),
     startingPrice: Number(row.starting_price),
     priceCurrency: (row.price_currency || "USD") as CurrencyCode,
     startingPriceUsd: Number(row.starting_price_usd),

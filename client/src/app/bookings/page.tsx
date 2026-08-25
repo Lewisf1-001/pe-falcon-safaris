@@ -20,7 +20,7 @@ export default function BookingsPage() {
           <MyBookingsList />
 
           <p className="mt-8 text-center text-sm text-gray-500">
-            <Link href="/#packages" className="font-medium text-forest hover:underline">
+            <Link href="/packages" className="font-medium text-forest hover:underline">
               Browse more packages
             </Link>
           </p>

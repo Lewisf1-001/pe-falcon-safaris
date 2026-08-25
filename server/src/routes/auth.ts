@@ -9,6 +9,7 @@ import {
   getPasswordResetExpiry,
   sendVerificationEmail,
   sendPasswordResetEmail,
+  shouldSkipEmailVerification,
 } from "../services/email";
 import { signAuthToken } from "../services/jwt";
 
@@ -324,8 +325,9 @@ router.post("/register", async (req, res, next) => {
 
     const { firstName, lastName, email, password } = parsed.data;
     const passwordHash = await bcrypt.hash(password, 12);
-    const verificationToken = createVerificationToken();
-    const verificationExpiresAt = getVerificationExpiry();
+    const skipEmailVerification = shouldSkipEmailVerification();
+    const verificationToken = skipEmailVerification ? null : createVerificationToken();
+    const verificationExpiresAt = skipEmailVerification ? null : getVerificationExpiry();
 
     const result = await pool.query(
       `INSERT INTO users (
@@ -337,13 +339,14 @@ router.post("/register", async (req, res, next) => {
          verification_token,
          verification_token_expires_at
        )
-       VALUES ($1, $2, $3, $4, FALSE, $5, $6)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, first_name, last_name, email, email_verified, created_at`,
       [
         firstName,
         lastName,
         email.toLowerCase(),
         passwordHash,
+        skipEmailVerification,
         verificationToken,
         verificationExpiresAt,
       ]
@@ -351,20 +354,23 @@ router.post("/register", async (req, res, next) => {
 
     const user = result.rows[0];
 
-    try {
-      await sendVerificationEmail(user.email, user.first_name, verificationToken);
-    } catch (emailError) {
-      await pool.query("DELETE FROM users WHERE id = $1", [user.id]);
-      return res.status(503).json({
-        error:
-          "Account could not be created because the verification email failed to send. Check SMTP settings and try again.",
-      });
+    if (!skipEmailVerification) {
+      try {
+        await sendVerificationEmail(user.email, user.first_name, verificationToken!);
+      } catch (emailError) {
+        await pool.query("DELETE FROM users WHERE id = $1", [user.id]);
+        return res.status(503).json({
+          error:
+            "Account could not be created because the verification email failed to send. Check SMTP settings and try again.",
+        });
+      }
     }
 
     return res.status(201).json({
-      message:
-        "Account created. Please check your email to verify your account before signing in.",
-      requiresEmailVerification: true,
+      message: skipEmailVerification
+        ? "Account created. You can sign in now."
+        : "Account created. Please check your email to verify your account before signing in.",
+      requiresEmailVerification: !skipEmailVerification,
       user: {
         id: user.id,
         firstName: user.first_name,

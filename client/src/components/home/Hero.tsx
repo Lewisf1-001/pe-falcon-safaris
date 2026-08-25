@@ -1,28 +1,34 @@
-import Button from "@/components/ui/Button";
+import Link from "next/link";
 
 export default function Hero() {
   return (
     <section className="hero-stripes">
       <div className="mx-auto flex max-w-4xl flex-col items-center px-6 py-24 text-center sm:py-28 lg:py-32">
-        <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 sm:text-sm">
-          Kenya&apos;s Premier Safari Experience
-        </p>
+        <div className="bg-gold px-4 py-1.5 sm:px-6">
+          <p className="font-display text-[10px] font-semibold uppercase tracking-[0.28em] text-forest sm:text-xs">
+            Kenya · Premier Safaris · Wildlife Adventures
+          </p>
+        </div>
 
-        <h1 className="mb-5 text-4xl font-bold leading-tight text-white sm:text-5xl lg:text-6xl">
-          Explore Kenya With PE Falcon Safaris
+        <h1 className="font-outfit mt-10 text-5xl font-extralight leading-[1.15] tracking-tight sm:text-6xl lg:text-7xl">
+          <span className="block text-white">Explore Kenya.</span>
+          <span className="mt-1 block text-gold">Adventure awaits.</span>
         </h1>
 
-        <p className="mb-10 max-w-2xl text-base text-white/85 sm:text-lg">
-          Unforgettable wildlife adventures. Expert guides. Memories for life.
-        </p>
-
-        <Button
-          variant="primary"
-          href="#book"
-          className="px-8 py-3 text-base font-semibold"
-        >
-          Book Your Adventure
-        </Button>
+        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+          <Link
+            href="#book"
+            className="inline-flex items-center justify-center rounded-full bg-gold px-8 py-3 font-display text-xs font-semibold uppercase tracking-[0.18em] text-forest transition-colors hover:bg-gold-hover"
+          >
+            Book Your Adventure
+          </Link>
+          <Link
+            href="#about"
+            className="inline-flex items-center justify-center rounded-full border border-gold bg-white px-8 py-3 font-display text-xs font-semibold uppercase tracking-[0.18em] text-forest transition-colors hover:bg-gold"
+          >
+            Why Choose Us
+          </Link>
+        </div>
       </div>
     </section>
   );

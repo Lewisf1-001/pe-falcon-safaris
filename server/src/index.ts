@@ -7,18 +7,23 @@ import adminUsersRoutes from "./routes/adminUsers";
 import adminPackagesRoutes from "./routes/adminPackages";
 import adminBookingsRoutes from "./routes/adminBookings";
 import adminPaymentsRoutes from "./routes/adminPayments";
+import adminClientsRoutes from "./routes/adminClients";
+import adminUploadsRoutes from "./routes/adminUploads";
 import packagesRoutes from "./routes/packages";
 import bookingsRoutes from "./routes/bookings";
 import paymentsRoutes from "./routes/payments";
 import mpesaRoutes from "./routes/mpesa";
 import currencyRoutes from "./routes/currency";
 import { errorHandler } from "./middleware/errorHandler";
+import { ensureUploadDirs, packageImagesDir } from "./services/uploads";
 
 const app = express();
 const port = Number(process.env.PORT) || 4000;
 const clientUrl = process.env.CLIENT_URL || "http://localhost:3000";
 const adminUrl = process.env.ADMIN_URL || "http://localhost:3001";
 const allowedOrigins = [clientUrl, adminUrl];
+
+ensureUploadDirs();
 
 app.use(
   cors({
@@ -34,6 +39,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use("/api/uploads/package-images", express.static(packageImagesDir));
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -50,6 +56,8 @@ app.use("/api/admin/users", adminUsersRoutes);
 app.use("/api/admin/packages", adminPackagesRoutes);
 app.use("/api/admin/bookings", adminBookingsRoutes);
 app.use("/api/admin/payments", adminPaymentsRoutes);
+app.use("/api/admin/clients", adminClientsRoutes);
+app.use("/api/admin/uploads", adminUploadsRoutes);
 app.use(errorHandler);
 
 app.listen(port, () => {

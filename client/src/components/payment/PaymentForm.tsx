@@ -91,7 +91,9 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
 
     function goToBooking() {
       setError("");
-      setSuccess("M-Pesa payment received. Your booking is confirmed.");
+      setSuccess(
+        "Payment received. Your reservation is confirmed — check your email for the receipt."
+      );
       setAwaitingMpesa(false);
       setIsSubmitting(false);
       router.replace(`/bookings/${bookingId}`);
@@ -222,7 +224,10 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
       }
 
       setError("");
-      setSuccess(data.message || "Payment successful. Your booking is confirmed.");
+      setSuccess(
+        data.message ||
+          "Payment successful. Your reservation is confirmed — check your email for the receipt."
+      );
       router.replace(`/bookings/${bookingId}`);
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");
@@ -462,7 +467,7 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
       <button
         type="submit"
         disabled={isSubmitting || awaitingMpesa}
-        className="w-full rounded-md border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full rounded-none border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
       >
         {awaitingMpesa
           ? "Waiting for M-Pesa..."

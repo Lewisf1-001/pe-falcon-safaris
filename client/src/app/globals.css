@@ -1,18 +1,38 @@
 @import "tailwindcss";
 
 @theme {
-  --color-forest: #1a3c34;
-  --color-forest-light: #234a40;
-  --color-forest-stripe: #1f4439;
-  --color-gold: #d4af37;
-  --color-gold-hover: #c9a227;
-  --color-olive: #4a5d3f;
+  /* Black — primary surfaces, text, nav */
+  --color-forest: #111111;
+  --color-forest-light: #2a2a2a;
+  --color-forest-stripe: #1a1a1a;
+  /* Bright yellow — CTAs */
+  --color-gold: #ffd600;
+  --color-gold-hover: #ebc400;
+  /* Muted champagne — premium accents */
+  --color-gold-muted: #c4a35a;
+  --color-gold-soft: #d4b978;
+  /* Supporting charcoal */
+  --color-olive: #3d3d3d;
+  /* White — page backgrounds */
+  --color-cream: #ffffff;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
+  --font-outfit: var(--font-outfit-face), ui-sans-serif, system-ui, sans-serif;
+  --font-calligraphy: "Feeling Passionate", cursive;
+}
+
+@font-face {
+  font-family: "Feeling Passionate";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://fonts.cdnfonts.com/s/44651/FeelingPassionateRegular-gxp34.woff")
+    format("woff");
 }
 
 body {
-  background: #ffffff;
-  color: #1a3c34;
+  background: var(--color-cream);
+  color: var(--color-forest);
   font-family: var(--font-sans);
 }
 
@@ -25,4 +45,8 @@ body {
     transparent 2px,
     transparent 48px
   );
+}
+
+.nav-cta {
+  background-image: linear-gradient(90deg, #f0d78c 0%, #c4a35a 100%);
 }

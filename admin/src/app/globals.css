@@ -1,16 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-forest: #1a3c34;
-  --color-forest-light: #234a40;
-  --color-forest-sidebar: #173a32;
-  --color-gold: #d4af37;
-  --color-cream: #f7f5f0;
+  /* Black — primary surfaces, text, sidebar */
+  --color-forest: #111111;
+  --color-forest-light: #2a2a2a;
+  --color-forest-sidebar: #0a0a0a;
+  /* Bright yellow — accents, highlights */
+  --color-gold: #ffd600;
+  --color-gold-hover: #ebc400;
+  /* White — page backgrounds */
+  --color-cream: #ffffff;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
 body {
   background: var(--color-cream);
-  color: #1a3c34;
+  color: var(--color-forest);
   font-family: var(--font-sans);
 }

@@ -179,7 +179,7 @@ export default function BookSafariForm({ safariPackage }: BookSafariFormProps) {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full rounded-none border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Submitting..." : "Confirm reservation"}
       </button>

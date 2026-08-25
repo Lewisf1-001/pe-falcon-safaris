@@ -1,7 +1,9 @@
-import jwt from "jsonwebtoken";
+import jwt, { type SignOptions } from "jsonwebtoken";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_SIGN_OPTIONS: SignOptions = {
+  expiresIn: (process.env.JWT_EXPIRES_IN || "7d") as SignOptions["expiresIn"],
+};
 
 export type AuthTokenPayload = {
   userId: number;
@@ -15,7 +17,7 @@ export type AdminTokenPayload = {
 };
 
 export function signAuthToken(payload: AuthTokenPayload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET, JWT_SIGN_OPTIONS);
 }
 
 export function verifyAuthToken(token: string): AuthTokenPayload {
@@ -33,9 +35,7 @@ export function verifyAuthToken(token: string): AuthTokenPayload {
 }
 
 export function signAdminToken(payload: Omit<AdminTokenPayload, "type">) {
-  return jwt.sign({ ...payload, type: "admin" as const }, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  });
+  return jwt.sign({ ...payload, type: "admin" as const }, JWT_SECRET, JWT_SIGN_OPTIONS);
 }
 
 export function verifyAdminToken(token: string) {

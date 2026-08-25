@@ -1,5 +1,5 @@
-import Link from "next/link";
 import Button from "@/components/ui/Button";
+import PackageCardGallery from "@/components/packages/PackageCardGallery";
 import FormattedPrice from "@/components/currency/FormattedPrice";
 import type { SafariPackage } from "@/types/package";
 
@@ -9,10 +9,13 @@ type PackageCardProps = {
 
 export default function PackageCard({ package: safariPackage }: PackageCardProps) {
   const destinationPreview = safariPackage.destinations.slice(0, 2).join(" · ");
+  const galleryImages = safariPackage.galleryImages ?? [];
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className="aspect-[4/3] bg-olive" aria-hidden="true" />
+      <div className="relative aspect-[4/3] bg-olive">
+        <PackageCardGallery images={galleryImages} packageName={safariPackage.name} />
+      </div>
 
       <div className="flex flex-1 flex-col p-5">
         <h3 className="text-lg font-bold text-forest">{safariPackage.name}</h3>

@@ -11,4 +11,10 @@ export function getAdminAuthHeaders() {
   };
 }
 
+export function getAdminAuthHeadersForUpload(): Record<string, string> {
+  const token = getAdminToken();
+
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export { API_URL };

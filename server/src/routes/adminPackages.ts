@@ -10,9 +10,21 @@ import { formatPackage } from "./packages";
 
 const router = Router();
 
-const PACKAGE_RETURNING = `id, slug, name, duration, ideal_for, destinations, highlights, includes,
+const PACKAGE_RETURNING = `id, slug, name, duration, ideal_for, destinations, highlights, includes, gallery_images,
                  starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
                  created_at, updated_at`;
+
+const galleryImageSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .min(1, "Each image needs a URL or path")
+    .refine(
+      (value) => value.startsWith("/") || /^https?:\/\//.test(value),
+      "Each image needs a valid URL or path"
+    ),
+  alt: z.string().trim().min(1, "Each image needs descriptive alt text").max(500),
+});
 
 const packageBodySchema = z.object({
   slug: z
@@ -27,6 +39,7 @@ const packageBodySchema = z.object({
   destinations: z.array(z.string().trim().min(1)).min(1, "Add at least one destination"),
   highlights: z.array(z.string().trim().min(1)).min(1, "Add at least one highlight"),
   includes: z.array(z.string().trim().min(1)).min(1, "Add at least one included item"),
+  galleryImages: z.array(galleryImageSchema).optional(),
   startingPrice: z.number().positive("Price must be greater than zero"),
   priceCurrency: z.enum(SUPPORTED_CURRENCIES),
   priceNote: z.string().trim().max(255).optional().nullable(),
@@ -39,7 +52,7 @@ router.use(requireAdminAuth);
 router.get("/", async (_req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT id, slug, name, duration, ideal_for, destinations, highlights, includes,
+      `SELECT id, slug, name, duration, ideal_for, destinations, highlights, includes, gallery_images,
               starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order,
               created_at, updated_at
        FROM packages
@@ -64,14 +77,19 @@ router.post("/", async (req: AdminAuthenticatedRequest, res, next) => {
     }
 
     const data = parsed.data;
+
+    if (data.galleryImages?.some((image) => !image.alt.trim())) {
+      return res.status(400).json({ error: "Each gallery image needs descriptive alt text." });
+    }
+
     const startingPriceUsd = toUsdExact(data.startingPrice, data.priceCurrency);
 
     const result = await pool.query(
       `INSERT INTO packages (
-         slug, name, duration, ideal_for, destinations, highlights, includes,
+         slug, name, duration, ideal_for, destinations, highlights, includes, gallery_images,
          starting_price, price_currency, starting_price_usd, price_note, is_active, sort_order
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING ${PACKAGE_RETURNING}`,
       [
         data.slug,
@@ -81,6 +99,7 @@ router.post("/", async (req: AdminAuthenticatedRequest, res, next) => {
         JSON.stringify(data.destinations),
         JSON.stringify(data.highlights),
         JSON.stringify(data.includes),
+        JSON.stringify(data.galleryImages ?? []),
         data.startingPrice,
         data.priceCurrency,
         startingPriceUsd,
@@ -110,6 +129,11 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
     }
 
     const data = parsed.data;
+
+    if (data.galleryImages?.some((image) => !image.alt.trim())) {
+      return res.status(400).json({ error: "Each gallery image needs descriptive alt text." });
+    }
+
     const startingPriceUsd = toUsdExact(data.startingPrice, data.priceCurrency);
 
     const result = await pool.query(
@@ -121,14 +145,15 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
            destinations = $5,
            highlights = $6,
            includes = $7,
-           starting_price = $8,
-           price_currency = $9,
-           starting_price_usd = $10,
-           price_note = $11,
-           is_active = $12,
-           sort_order = $13,
+           gallery_images = $8,
+           starting_price = $9,
+           price_currency = $10,
+           starting_price_usd = $11,
+           price_note = $12,
+           is_active = $13,
+           sort_order = $14,
            updated_at = NOW()
-       WHERE id = $14
+       WHERE id = $15
        RETURNING ${PACKAGE_RETURNING}`,
       [
         data.slug,
@@ -138,6 +163,7 @@ router.patch("/:id", async (req: AdminAuthenticatedRequest, res, next) => {
         JSON.stringify(data.destinations),
         JSON.stringify(data.highlights),
         JSON.stringify(data.includes),
+        JSON.stringify(data.galleryImages ?? []),
         data.startingPrice,
         data.priceCurrency,
         startingPriceUsd,

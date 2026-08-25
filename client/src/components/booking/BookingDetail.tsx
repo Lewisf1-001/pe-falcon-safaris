@@ -116,7 +116,7 @@ export default function BookingDetail({ bookingId }: BookingDetailProps) {
         {booking.status === "pending" && (
           <Link
             href={`/bookings/${booking.id}/pay`}
-            className="rounded-md border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+            className="rounded-none border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
           >
             Pay now
           </Link>

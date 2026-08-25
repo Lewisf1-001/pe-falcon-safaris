@@ -5,7 +5,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 export async function fetchPackages(): Promise<SafariPackage[]> {
   try {
     const response = await fetch(`${API_URL}/api/packages`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
     });
 
     if (!response.ok) {
@@ -22,7 +22,7 @@ export async function fetchPackages(): Promise<SafariPackage[]> {
 export async function fetchPackageBySlug(slug: string): Promise<SafariPackage | null> {
   try {
     const response = await fetch(`${API_URL}/api/packages/${slug}`, {
-      next: { revalidate: 60 },
+      cache: "no-store",
     });
 
     if (!response.ok) {
