@@ -1,9 +1,9 @@
-import { createClient } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-server";
 import type { SafariPackage } from "@/types/package";
 
 export async function fetchPackages(): Promise<SafariPackage[]> {
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("packages")
@@ -40,7 +40,7 @@ export async function fetchPackages(): Promise<SafariPackage[]> {
 
 export async function fetchPackageBySlug(slug: string): Promise<SafariPackage | null> {
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase
       .from("packages")
