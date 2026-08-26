@@ -93,8 +93,8 @@ export default function AdminPaymentsList() {
       }));
 
       setPayments(mapped);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }

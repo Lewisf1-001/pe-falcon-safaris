@@ -55,8 +55,8 @@ export default function AdminResetPasswordContent() {
         }
 
         setIsTokenValid(true);
-      } catch {
-        setError("Unable to reach the server. Make sure the API is running.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An unexpected error occurred.");
       } finally {
         setIsValidating(false);
       }
@@ -98,8 +98,8 @@ export default function AdminResetPasswordContent() {
       window.setTimeout(() => {
         router.push("/login");
       }, REDIRECT_DELAY_MS);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsSubmitting(false);
     }

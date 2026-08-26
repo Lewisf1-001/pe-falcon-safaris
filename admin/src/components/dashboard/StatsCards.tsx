@@ -19,7 +19,7 @@ export default function StatsCards() {
           setClientCount(String(count));
         }
       } catch {
-        // Keep placeholder value when API is unavailable.
+        // Keep placeholder value when query fails (e.g. RLS restriction).
       }
     }
 

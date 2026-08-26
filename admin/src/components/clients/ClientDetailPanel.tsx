@@ -131,8 +131,8 @@ export default function ClientDetailPanel({
       setFirstName(clientRow.first_name);
       setLastName(clientRow.last_name);
       setEmail(clientRow.email);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }
@@ -167,8 +167,8 @@ export default function ClientDetailPanel({
       setMessage("Client updated successfully.");
       await loadClient();
       onUpdated();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsSaving(false);
     }
@@ -206,8 +206,8 @@ export default function ClientDetailPanel({
       } else {
         setMessage("Verification email sent successfully.");
       }
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsResendingVerification(false);
     }
@@ -242,8 +242,8 @@ export default function ClientDetailPanel({
       }
 
       setMessage("Password reset email sent successfully.");
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsSendingReset(false);
     }

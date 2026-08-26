@@ -166,8 +166,8 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
         setForm(emptyPackageFormState);
       }
       onSaved();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsSubmitting(false);
     }

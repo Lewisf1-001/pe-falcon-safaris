@@ -53,8 +53,8 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
       }));
 
       setPackages(mapped);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }
@@ -87,8 +87,8 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
 
       setMessage("Package deleted successfully.");
       await loadPackages();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setDeletingId(null);
     }
