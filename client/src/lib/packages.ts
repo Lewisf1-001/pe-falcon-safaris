@@ -1,9 +1,16 @@
-import { createClient } from "@/lib/supabase-server";
+import { createClient } from "@supabase/supabase-js";
 import type { SafariPackage } from "@/types/package";
+
+function getPublicClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 export async function fetchPackages(): Promise<SafariPackage[]> {
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
 
     const { data, error } = await supabase
       .from("packages")
@@ -40,7 +47,7 @@ export async function fetchPackages(): Promise<SafariPackage[]> {
 
 export async function fetchPackageBySlug(slug: string): Promise<SafariPackage | null> {
   try {
-    const supabase = await createClient();
+    const supabase = getPublicClient();
 
     const { data, error } = await supabase
       .from("packages")
