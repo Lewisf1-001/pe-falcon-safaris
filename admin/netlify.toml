@@ -2,7 +2,7 @@
 # Used when this Netlify site's base directory is `admin`.
 
 [build]
-  command = "npm ci && npm run build"
+  command = "npm install && npm run build"
   publish = ".next"
 
 [[plugins]]
@@ -10,6 +10,3 @@
 
 [build.environment]
   NODE_VERSION = "20"
-
-# Set in Netlify UI → Environment variables:
-# NEXT_PUBLIC_API_URL = https://pe-falcon-safaris-production.up.railway.app

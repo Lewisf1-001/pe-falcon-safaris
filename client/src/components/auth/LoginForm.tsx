@@ -3,10 +3,8 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveAuthSession } from "@/lib/auth";
+import { signIn } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type FormState = {
   email: string;
@@ -43,24 +41,11 @@ export default function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Sign in failed. Please try again.");
-        return;
-      }
-
-      saveAuthSession(data.token, data.user);
+      await signIn(form.email, form.password);
       router.push(getSafeNextPath(searchParams.get("next")));
       router.refresh();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -107,7 +92,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full nav-cta rounded-none border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Signing in..." : "Sign In"}
       </button>

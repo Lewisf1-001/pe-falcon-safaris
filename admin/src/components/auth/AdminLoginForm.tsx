@@ -3,18 +3,16 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { saveAdminSession } from "@/lib/auth";
+import { signInAdmin } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
 type FormState = {
-  username: string;
+  email: string;
   password: string;
 };
 
 const initialState: FormState = {
-  username: "",
+  email: "",
   password: "",
 };
 
@@ -34,24 +32,11 @@ export default function AdminLoginForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Sign in failed. Please try again.");
-        return;
-      }
-
-      saveAdminSession(data.token, data.admin);
+      await signInAdmin(form.email, form.password);
       router.push("/");
       router.refresh();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -60,16 +45,16 @@ export default function AdminLoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-forest">
-          Username
+        <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-forest">
+          Email
         </label>
         <input
-          id="username"
-          type="text"
+          id="email"
+          type="email"
           required
-          autoComplete="username"
-          value={form.username}
-          onChange={(e) => handleChange("username", e.target.value)}
+          autoComplete="email"
+          value={form.email}
+          onChange={(e) => handleChange("email", e.target.value)}
           className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
         />
       </div>
@@ -98,7 +83,7 @@ export default function AdminLoginForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-forest bg-forest px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+        className="nav-cta w-full rounded-md border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Signing in..." : "Sign In"}
       </button>

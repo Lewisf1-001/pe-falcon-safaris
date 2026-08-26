@@ -1,27 +1,35 @@
 "use client";
 
 import { useCurrency } from "@/components/currency/CurrencyProvider";
-import { CURRENCY_LABELS, type CurrencyCode } from "@/lib/currency";
+import type { CurrencyCode } from "@/lib/currency";
 
 export default function CurrencySwitcher() {
   const { currency, currencies, setCurrency } = useCurrency();
 
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="sr-only">Display currency</span>
-      <select
-        aria-label="Display currency"
-        value={currency}
-        onChange={(event) => setCurrency(event.target.value as CurrencyCode)}
-        className="rounded-md border border-white/40 bg-white px-2 py-1.5 text-sm font-medium text-forest outline-none focus:border-gold focus:ring-2 focus:ring-gold/40"
-        title="Choose currency for prices"
-      >
-        {currencies.map((code) => (
-          <option key={code} value={code} className="bg-white text-forest">
-            {code} · {CURRENCY_LABELS[code]}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div
+      className="hidden items-center gap-2 font-display text-[11px] font-medium uppercase tracking-[0.18em] sm:flex lg:text-xs"
+      role="group"
+      aria-label="Display currency"
+    >
+      {currencies.map((code, index) => {
+        const active = currency === code;
+
+        return (
+          <span key={code} className="flex items-center gap-2">
+            {index > 0 && <span className="text-white/25">·</span>}
+            <button
+              type="button"
+              onClick={() => setCurrency(code as CurrencyCode)}
+              className={`transition-colors duration-300 ${
+                active ? "text-gold-muted" : "text-white/45 hover:text-white/80"
+              }`}
+            >
+              {code}
+            </button>
+          </span>
+        );
+      })}
+    </div>
   );
 }

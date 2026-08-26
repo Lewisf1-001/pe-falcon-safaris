@@ -12,15 +12,18 @@ const seatsToneStyles: Record<UpcomingTour["seatsTone"], string> = {
 
 export default function UpcomingTours() {
   return (
-    <section id="book" className="bg-white pb-16 sm:pb-20">
+    <section id="book" className="bg-cream-muted py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-6 lg:px-8">
-        <h2 className="text-3xl font-bold text-forest">Upcoming Tours</h2>
+        <h2 className="font-outfit text-3xl font-bold tracking-tight text-forest sm:text-4xl">
+          Upcoming Tours
+        </h2>
+        <p className="mt-2 text-gray-500">Reserve your spot on the next departure</p>
 
-        <div className="mt-8 overflow-hidden rounded-xl border border-gray-200">
+        <div className="mt-8 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead>
-                <tr className="bg-forest text-white">
+                <tr className="nav-cta text-forest">
                   <th className="px-5 py-4 font-semibold">Tour Name</th>
                   <th className="px-5 py-4 font-semibold">Date</th>
                   <th className="px-5 py-4 font-semibold">Seats Left</th>
@@ -30,7 +33,10 @@ export default function UpcomingTours() {
               </thead>
               <tbody>
                 {upcomingTours.map((tour) => (
-                  <tr key={tour.id} className="border-t border-gray-100 bg-white">
+                  <tr
+                    key={tour.id}
+                    className="border-t border-gray-100 bg-white transition-colors hover:bg-cream-muted/60"
+                  >
                     <td className="px-5 py-4 font-medium text-forest">{tour.name}</td>
                     <td className="px-5 py-4 text-gray-600">{tour.date}</td>
                     <td className="px-5 py-4">
@@ -40,13 +46,13 @@ export default function UpcomingTours() {
                         {tour.seatsLeft} left
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-forest">
+                    <td className="px-5 py-4 font-semibold text-champagne-deep">
                       <FormattedPrice amountUsd={tour.price} />
                     </td>
                     <td className="px-5 py-4">
                       <Link
                         href="/register"
-                        className="inline-flex rounded-md border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+                        className="nav-cta inline-flex rounded-full px-5 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-forest transition-opacity hover:opacity-90"
                       >
                         Book Now
                       </Link>

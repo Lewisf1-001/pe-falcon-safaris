@@ -3,7 +3,7 @@
 
 [build]
   base = "client"
-  command = "npm ci && npm run build"
+  command = "npm install && npm run build"
   publish = ".next"
 
 [[plugins]]
@@ -11,6 +11,3 @@
 
 [build.environment]
   NODE_VERSION = "20"
-
-# Set in Netlify UI → Site settings → Environment variables:
-# NEXT_PUBLIC_API_URL = https://your-production-api.example.com

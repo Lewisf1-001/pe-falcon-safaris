@@ -3,8 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import PasswordInput from "@/components/auth/PasswordInput";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { signUp } from "@/lib/auth";
 
 type FormState = {
   firstName: string;
@@ -38,27 +37,26 @@ export default function RegisterForm() {
     setSuccess("");
     setIsSubmitting(true);
 
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+      await signUp({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        email: form.email,
+        password: form.password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Registration failed. Please try again.");
-        return;
-      }
-
       setSuccess(
-        data.message ||
-          "Account created. Please check your email to verify your account before signing in."
+        "Account created. Please check your email to verify your account before signing in."
       );
       setForm(initialState);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -145,7 +143,7 @@ export default function RegisterForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full nav-cta rounded-none border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Creating account..." : "Create Account"}
       </button>

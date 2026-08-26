@@ -1,17 +1,23 @@
 export const whyChooseUsItems = [
   {
     id: "guides",
-    title: "Professional Guides",
-    description: "Certified, experienced wildlife experts",
+    emoji: "🦁",
+    title: "Expert Safari Guides",
+    description:
+      "Experience Kenya through the eyes of knowledgeable and passionate local guides.",
   },
   {
     id: "payments",
-    title: "Secure Payments",
-    description: "M-Pesa, card & bank transfer",
+    emoji: "💳",
+    title: "Safe & Flexible Payments",
+    description:
+      "Convenient and secure payment options for a hassle-free booking experience.",
   },
   {
-    id: "tours",
-    title: "Customized Tours",
-    description: "Tailored to your group & budget",
+    id: "adventures",
+    emoji: "📍",
+    title: "Tailor-Made Adventures",
+    description:
+      "Every safari is crafted to match your travel style and create unforgettable memories.",
   },
 ];

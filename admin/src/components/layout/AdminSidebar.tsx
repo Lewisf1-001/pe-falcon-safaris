@@ -19,12 +19,17 @@ export default function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [username, setUsername] = useState("admin");
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
-    const admin = getAdminUser();
-    if (admin?.username) {
-      setUsername(admin.username);
-    }
+    getAdminUser().then((admin) => {
+      if (admin?.username) {
+        setUsername(admin.username);
+      }
+      if (admin?.role) {
+        setRole(admin.role);
+      }
+    });
   }, []);
 
   function handleLogout() {
@@ -34,8 +39,8 @@ export default function AdminSidebar() {
   }
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col bg-forest-sidebar px-4 py-6 text-white">
-      <Link href="/" className="px-3 text-xl font-bold text-gold">
+    <aside className="brand-dark-bg flex w-56 shrink-0 flex-col px-4 py-6 text-white">
+      <Link href="/" className="px-3 text-xl font-bold text-champagne">
         PE Falcon
       </Link>
 
@@ -50,8 +55,8 @@ export default function AdminSidebar() {
               href={item.href}
               className={`block rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
                 isActive
-                  ? "bg-forest-light text-white"
-                  : "text-white/80 hover:bg-forest-light/60 hover:text-white"
+                  ? "bg-champagne/15 text-champagne"
+                  : "text-white/80 hover:bg-white/5 hover:text-champagne"
               }`}
             >
               {item.label}
@@ -65,6 +70,9 @@ export default function AdminSidebar() {
         <div>
           <p className="px-3 text-xs text-white/60">Signed in as</p>
           <p className="px-3 text-sm font-medium text-white">{username}</p>
+          {role && (
+            <p className="px-3 text-xs text-white/60 capitalize">{role === "superadmin" ? "Super Admin" : "Admin"}</p>
+          )}
           <button
             type="button"
             onClick={handleLogout}

@@ -10,7 +10,7 @@ export default function DashboardLayout({
     <AdminAuthGuard>
       <div className="flex min-h-screen">
         <AdminSidebar />
-        <main className="min-h-screen flex-1 bg-cream p-6 sm:p-8">{children}</main>
+        <main className="min-h-screen flex-1 bg-cream-muted p-6 sm:p-8">{children}</main>
       </div>
     </AdminAuthGuard>
   );

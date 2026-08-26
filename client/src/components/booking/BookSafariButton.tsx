@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { getAuthToken } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 
 type BookSafariButtonProps = {
@@ -12,15 +12,20 @@ export default function BookSafariButton({ slug }: BookSafariButtonProps) {
   const [href, setHref] = useState(`/login?next=${encodeURIComponent(`/packages/${slug}/book`)}`);
 
   useEffect(() => {
-    if (getAuthToken()) {
-      setHref(`/packages/${slug}/book`);
+    async function checkAuth() {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setHref(`/packages/${slug}/book`);
+      }
     }
+    checkAuth();
   }, [slug]);
 
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-md border border-gold bg-gold px-6 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+      className="nav-cta inline-flex items-center justify-center rounded-none border-0 px-6 py-3 text-sm font-semibold tracking-[0.12em] uppercase text-forest transition-opacity hover:opacity-90"
     >
       Book this safari
     </Link>

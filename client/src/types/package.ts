@@ -1,5 +1,10 @@
 export type CurrencyCode = "USD" | "KES" | "EUR" | "GBP";
 
+export type PackageGalleryImage = {
+  url: string;
+  alt: string;
+};
+
 export type SafariPackage = {
   id: number;
   slug: string;
@@ -9,10 +14,13 @@ export type SafariPackage = {
   destinations: string[];
   highlights: string[];
   includes: string[];
+  galleryImages: PackageGalleryImage[];
   startingPrice: number;
   priceCurrency: CurrencyCode;
   startingPriceUsd: number;
   priceNote: string | null;
   isActive: boolean;
   sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
 };

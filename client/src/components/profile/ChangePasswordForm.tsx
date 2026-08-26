@@ -3,8 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import PasswordInput from "@/components/auth/PasswordInput";
-import { API_URL, getAuthHeaders } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, changePassword } from "@/lib/auth";
 
 type FormState = {
   currentPassword: string;
@@ -46,23 +45,22 @@ export default function ChangePasswordForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/change-password`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(form),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to change password. Please try again.");
+      if (form.newPassword !== form.confirmPassword) {
+        setError("New passwords do not match.");
         return;
       }
 
-      setSuccess(data.message || "Password changed successfully.");
+      if (form.newPassword.length < 8) {
+        setError("New password must be at least 8 characters.");
+        return;
+      }
+
+      await changePassword(form.currentPassword, form.newPassword);
+
+      setSuccess("Password changed successfully.");
       setForm(initialState);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to change password. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

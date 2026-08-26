@@ -1,43 +1,23 @@
 import type { NextConfig } from "next";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-function getImageRemotePatterns() {
-  const patterns: NonNullable<NextConfig["images"]>["remotePatterns"] = [
-    {
-      protocol: "https",
-      hostname: "images.unsplash.com",
-      pathname: "/**",
-    },
-  ];
-
-  try {
-    const parsed = new URL(apiUrl);
-    const protocol = parsed.protocol.replace(":", "") as "http" | "https";
-
-    patterns.push({
-      protocol,
-      hostname: parsed.hostname,
-      pathname: "/api/uploads/**",
-    });
-  } catch {
-    // Keep defaults when API URL is invalid during local setup.
-  }
-
-  return patterns;
-}
-
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: getImageRemotePatterns(),
-  },
-  async rewrites() {
-    return [
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920],
+    imageSizes: [64, 96, 128, 256, 384],
+    minimumCacheTTL: 60 * 60 * 24 * 7,
+    remotePatterns: [
       {
-        source: "/api/uploads/:path*",
-        destination: `${apiUrl}/api/uploads/:path*`,
+        protocol: "https",
+        hostname: "images.unsplash.com",
+        pathname: "/**",
       },
-    ];
+      {
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
+    ],
   },
 };
 
