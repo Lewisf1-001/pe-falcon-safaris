@@ -8,6 +8,7 @@ export type AdminListItem = {
   username: string;
   email: string;
   status: "active" | "invited";
+  role: string;
   createdAt: string;
 };
 
@@ -28,8 +29,8 @@ export default function AdminUsersList() {
     setError("");
 
     try {
-      const data = await callEdgeFunction<{ admins: AdminListItem[] }>("admin-users");
-      setAdmins(data.admins);
+      const data = await callEdgeFunction<{ data: AdminListItem[] }>("admin-users");
+      setAdmins(data.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load admin users.");
     } finally {
@@ -85,6 +86,7 @@ export default function AdminUsersList() {
             <tr className="border-b border-gray-100 text-gray-500">
               <th className="px-2 py-3 font-medium">Username</th>
               <th className="px-2 py-3 font-medium">Email</th>
+              <th className="px-2 py-3 font-medium">Role</th>
               <th className="px-2 py-3 font-medium">Status</th>
               <th className="px-2 py-3 font-medium">Joined</th>
               <th className="px-2 py-3 font-medium" />
@@ -95,6 +97,17 @@ export default function AdminUsersList() {
               <tr key={admin.id} className="border-b border-gray-50 last:border-0">
                 <td className="px-2 py-4 font-medium text-forest">{admin.username}</td>
                 <td className="px-2 py-4 text-gray-600">{admin.email}</td>
+                <td className="px-2 py-4">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${
+                      admin.role === "superadmin"
+                        ? "bg-purple-100 text-purple-700"
+                        : "bg-blue-100 text-blue-700"
+                    }`}
+                  >
+                    {admin.role === "superadmin" ? "Super Admin" : "Admin"}
+                  </span>
+                </td>
                 <td className="px-2 py-4">
                   <span
                     className={`inline-flex rounded-full px-3 py-1 text-xs font-medium capitalize ${statusStyles[admin.status]}`}

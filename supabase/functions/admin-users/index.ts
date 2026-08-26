@@ -66,11 +66,19 @@ serve(async (req: Request) => {
       );
     }
 
+    // Verify caller is a superadmin for invite/management operations
+    if (req.method === "POST" && callerAdmin.role !== "superadmin") {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Only superadmins can manage admin users" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // GET /admin-users - List all admins
     if (req.method === "GET" && path === "admin-users") {
       const { data: admins, error } = await supabaseAdmin
         .from("admins")
-        .select("*")
+        .select("id, username, email, status, role, created_at")
         .order("created_at", { ascending: false });
 
       if (error) {

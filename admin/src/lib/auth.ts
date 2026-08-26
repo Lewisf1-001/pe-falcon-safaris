@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase";
 export type AdminUser = {
   id: string;
   username: string;
+  role: string;
 };
 
 export async function signInAdmin(email: string, password: string) {
@@ -20,7 +21,7 @@ export async function signInAdmin(email: string, password: string) {
   // Check if user is an admin
   const { data: admin, error: adminError } = await supabase
     .from("admins")
-    .select("id, username")
+    .select("id, username, role")
     .eq("auth_id", data.user.id)
     .eq("status", "active")
     .single();
@@ -79,7 +80,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   // Get admin profile from admins table
   const { data: admin } = await supabase
     .from("admins")
-    .select("id, username")
+    .select("id, username, role")
     .eq("auth_id", user.id)
     .eq("status", "active")
     .single();
@@ -91,6 +92,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   return {
     id: admin.id,
     username: admin.username,
+    role: admin.role,
   };
 }
 

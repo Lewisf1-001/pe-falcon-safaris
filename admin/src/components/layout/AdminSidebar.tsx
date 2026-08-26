@@ -19,11 +19,15 @@ export default function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [username, setUsername] = useState("admin");
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     getAdminUser().then((admin) => {
       if (admin?.username) {
         setUsername(admin.username);
+      }
+      if (admin?.role) {
+        setRole(admin.role);
       }
     });
   }, []);
@@ -66,6 +70,9 @@ export default function AdminSidebar() {
         <div>
           <p className="px-3 text-xs text-white/60">Signed in as</p>
           <p className="px-3 text-sm font-medium text-white">{username}</p>
+          {role && (
+            <p className="px-3 text-xs text-white/60 capitalize">{role === "superadmin" ? "Super Admin" : "Admin"}</p>
+          )}
           <button
             type="button"
             onClick={handleLogout}
