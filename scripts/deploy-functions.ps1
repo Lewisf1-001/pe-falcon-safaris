@@ -58,7 +58,7 @@ try {
 }
 
 # Check project link
-$status = supabase status 2>&1
+$status = supabase status 2>$null
 if ($status -match "Not linked") {
     Write-Host "ERROR: Project not linked. Run: supabase link --project-ref <ref>" -ForegroundColor Red
     exit 1
@@ -71,7 +71,7 @@ foreach ($fn in $functions) {
 
     $jwtFlag = if ($NoVerifyJwt) { "--no-verify-jwt" } else { "" }
 
-    $result = supabase functions deploy $fn $jwtFlag 2>&1
+    $result = supabase functions deploy $fn $jwtFlag 2>&1 | Where-Object { $_ -notmatch "^WARN:" -and $_ -notmatch "^WARNING:" }
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host " OK" -ForegroundColor Green
