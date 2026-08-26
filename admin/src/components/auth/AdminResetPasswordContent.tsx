@@ -4,8 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import PasswordInput from "@/components/auth/PasswordInput";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { createClient } from "@/lib/supabase";
 const REDIRECT_DELAY_MS = 2000;
 
 type FormState = {
@@ -38,20 +37,19 @@ export default function AdminResetPasswordContent() {
     }
 
     async function validateToken() {
-      const resetToken = token;
-
-      if (!resetToken) {
+      if (!token) {
         return;
       }
 
       try {
-        const response = await fetch(
-          `${API_URL}/api/admin/auth/reset-password?token=${encodeURIComponent(resetToken)}`
-        );
-        const data = await response.json();
+        const supabase = createClient();
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: "recovery",
+        });
 
-        if (!response.ok) {
-          setError(data.error || "Reset link is invalid or has expired.");
+        if (verifyError) {
+          setError(verifyError.message || "Reset link is invalid or has expired.");
           setIsTokenValid(false);
           return;
         }
@@ -77,25 +75,24 @@ export default function AdminResetPasswordContent() {
     setSuccess("");
     setIsSubmitting(true);
 
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match.");
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_URL}/api/admin/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token,
-          password: form.password,
-          confirmPassword: form.confirmPassword,
-        }),
+      const supabase = createClient();
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: form.password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Password reset failed. Please try again.");
+      if (updateError) {
+        setError(updateError.message || "Password reset failed. Please try again.");
         return;
       }
 
-      setSuccess(data.message || "Password reset successfully. Redirecting to sign in...");
+      setSuccess("Password reset successfully. Redirecting to sign in...");
       setForm(initialState);
 
       window.setTimeout(() => {
@@ -162,7 +159,7 @@ export default function AdminResetPasswordContent() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-forest bg-forest px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+        className="nav-cta w-full rounded-md border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Resetting..." : "Reset password"}
       </button>

@@ -60,12 +60,12 @@ if (Test-Path $StateFile) {
     Remove-Item $StateFile -Force
 }
 
-$serverStopped = Stop-PortListener -Port 4000
 $clientStopped = Stop-PortListener -Port 3000
+$adminStopped = Stop-PortListener -Port 3001
 
 Write-Host ""
-if ($serverStopped -gt 0 -or $clientStopped -gt 0) {
+if ($clientStopped -gt 0 -or $adminStopped -gt 0) {
     Write-Host "Dev servers stopped."
 } else {
-    Write-Host "No running dev servers found on ports 3000 or 4000."
+    Write-Host "No running dev servers found on ports 3000 or 3001."
 }

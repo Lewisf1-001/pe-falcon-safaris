@@ -1,50 +1,157 @@
+import { createClient } from "@/lib/supabase";
+
 export type AuthUser = {
-  id: number;
+  id: string;
   firstName: string;
   lastName: string;
   email: string;
   emailVerified: boolean;
 };
 
-const TOKEN_KEY = "pe_falcon_auth_token";
-const USER_KEY = "pe_falcon_auth_user";
+export async function signUp(data: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+}) {
+  const supabase = createClient();
 
-export function saveAuthSession(token: string, user: AuthUser) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  const { data: authData, error } = await supabase.auth.signUp({
+    email: data.email,
+    password: data.password,
+    options: {
+      data: {
+        first_name: data.firstName,
+        last_name: data.lastName,
+      },
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return authData;
 }
 
-export function getAuthToken() {
-  if (typeof window === "undefined") {
+export async function signIn(email: string, password: string) {
+  const supabase = createClient();
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function signOut() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
+}
+
+export async function resetPassword(email: string) {
+  const supabase = createClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updatePassword(newPassword: string) {
+  const supabase = createClient();
+
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getUser(): Promise<AuthUser | null> {
+  const supabase = createClient();
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
     return null;
   }
 
-  return localStorage.getItem(TOKEN_KEY);
+  // Get profile from users table
+  const { data: profile } = await supabase
+    .from("users")
+    .select("first_name, last_name")
+    .eq("auth_id", user.id)
+    .single();
+
+  return {
+    id: user.id,
+    firstName: profile?.first_name || user.user_metadata?.first_name || "",
+    lastName: profile?.last_name || user.user_metadata?.last_name || "",
+    email: user.email || "",
+    emailVerified: user.email_confirmed_at !== null,
+  };
 }
 
-export function getAuthUser(): AuthUser | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = localStorage.getItem(USER_KEY);
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as AuthUser;
-  } catch {
-    return null;
-  }
+export async function getSession() {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session;
 }
 
-export function clearAuthSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+export function onAuthStateChange(callback: (user: AuthUser | null) => void) {
+  const supabase = createClient();
+
+  return supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      const user = await getUser();
+      callback(user);
+    } else {
+      callback(null);
+    }
+  });
 }
 
-export function updateAuthUser(user: AuthUser) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+export async function getAuthToken(): Promise<string | null> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const supabase = createClient();
+
+  const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+  if (getUserError || !user) {
+    throw new Error("You must be logged in.");
+  }
+
+  // Re-authenticate with current password
+  const { error: reAuthError } = await supabase.auth.signInWithPassword({
+    email: user.email!,
+    password: currentPassword,
+  });
+
+  if (reAuthError) {
+    throw new Error("Current password is incorrect.");
+  }
+
+  // Update to new password
+  const { error: updateError } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
 }

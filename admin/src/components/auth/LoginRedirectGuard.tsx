@@ -1,17 +1,28 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAdminToken } from "@/lib/auth";
+import { getAdminUser } from "@/lib/auth";
 
 export default function LoginRedirectGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    if (getAdminToken()) {
-      router.replace("/");
+    async function check() {
+      const admin = await getAdminUser();
+      if (admin) {
+        router.replace("/");
+      } else {
+        setChecked(true);
+      }
     }
+    check();
   }, [router]);
+
+  if (!checked) {
+    return null;
+  }
 
   return <>{children}</>;
 }

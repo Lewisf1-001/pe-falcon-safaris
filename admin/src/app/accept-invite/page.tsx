@@ -4,10 +4,10 @@ import Link from "next/link";
 
 export default function AcceptInvitePage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-cream px-6 py-12">
-      <div className="w-full max-w-md rounded-xl border border-gray-100 bg-white p-8 shadow-sm sm:p-10">
+    <main className="brand-dark-bg flex min-h-screen items-center justify-center px-6 py-12">
+      <div className="w-full max-w-md rounded-xl border border-champagne/20 bg-white p-8 shadow-sm sm:p-10">
         <div className="mb-8 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-champagne-deep">
             PE Falcon Admin
           </p>
           <h1 className="mt-2 text-3xl font-bold text-forest">Accept your invite</h1>

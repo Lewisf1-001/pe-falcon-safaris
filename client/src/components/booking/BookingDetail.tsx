@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCurrency } from "@/components/currency/CurrencyProvider";
-import { API_URL, getAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 import { getAuthToken } from "@/lib/auth";
 import type { Booking } from "@/types/booking";
 
@@ -33,19 +33,56 @@ export default function BookingDetail({ bookingId }: BookingDetailProps) {
 
     async function loadBooking() {
       try {
-        const response = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
-          headers: getAuthHeaders(),
-        });
-        const data = await response.json();
+        const supabase = createClient();
 
-        if (!response.ok) {
-          setError(data.error || "Unable to load booking.");
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setError("You must be logged in.");
           return;
         }
 
-        setBooking(data.booking);
+        const { data: profile } = await supabase
+          .from("users")
+          .select("id")
+          .eq("auth_id", user.id)
+          .single();
+
+        if (!profile) {
+          setError("User profile not found.");
+          return;
+        }
+
+        const { data, error: fetchError } = await supabase
+          .from("bookings")
+          .select(`
+            *,
+            packages!bookings_package_id_fkey (name, slug)
+          `)
+          .eq("id", bookingId)
+          .eq("user_id", profile.id)
+          .single();
+
+        if (fetchError || !data) {
+          setError("Booking not found.");
+          return;
+        }
+
+        setBooking({
+          id: Number(data.id),
+          userId: Number(data.user_id),
+          packageId: Number(data.package_id),
+          packageName: data.packages?.name,
+          packageSlug: data.packages?.slug,
+          travelDate: data.travel_date?.slice(0, 10),
+          guests: data.guests,
+          totalPriceUsd: Number(data.total_price_usd),
+          status: data.status,
+          notes: data.notes,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        });
       } catch {
-        setError("Unable to reach the server. Make sure the API is running.");
+        setError("Unable to load booking.");
       } finally {
         setIsLoading(false);
       }
@@ -116,7 +153,7 @@ export default function BookingDetail({ bookingId }: BookingDetailProps) {
         {booking.status === "pending" && (
           <Link
             href={`/bookings/${booking.id}/pay`}
-            className="rounded-none border border-gold bg-gold px-4 py-2 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover"
+            className="nav-cta rounded-none border-0 px-4 py-2 text-sm font-semibold text-forest transition-opacity hover:opacity-90"
           >
             Pay now
           </Link>

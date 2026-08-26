@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useCurrency } from "@/components/currency/CurrencyProvider";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 import { convertAmount, type CurrencyCode } from "@/lib/currency";
 import {
   PackageFormState,
@@ -114,25 +114,54 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
     const isEditing = Boolean(editingPackage);
 
     try {
-      const response = await fetch(
-        isEditing
-          ? `${API_URL}/api/admin/packages/${editingPackage!.id}`
-          : `${API_URL}/api/admin/packages`,
-        {
-          method: isEditing ? "PATCH" : "POST",
-          headers: getAdminAuthHeaders(),
-          body: JSON.stringify(payload),
-        }
-      );
+      const supabase = createClient();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to save package. Please try again.");
-        return;
+      // Calculate USD price for storage
+      let startingPriceUsd = startingPrice;
+      if (currency !== "USD") {
+        const { DEFAULT_RATES } = await import("@/lib/currency");
+        startingPriceUsd = Math.round(
+          (startingPrice / (DEFAULT_RATES[currency] || 1)) * 100
+        ) / 100;
       }
 
-      setSuccess(data.message || "Package saved successfully.");
+      const row = {
+        slug: payload.slug,
+        name: payload.name,
+        duration: payload.duration,
+        ideal_for: payload.idealFor,
+        destinations: payload.destinations,
+        highlights: payload.highlights,
+        includes: payload.includes,
+        gallery_images: payload.galleryImages,
+        starting_price: payload.startingPrice,
+        starting_price_usd: startingPriceUsd,
+        price_currency: currency,
+        price_note: payload.priceNote,
+        is_active: payload.isActive,
+        sort_order: payload.sortOrder,
+      };
+
+      if (isEditing) {
+        const { error: updateError } = await supabase
+          .from("packages")
+          .update(row)
+          .eq("id", editingPackage!.id);
+
+        if (updateError) {
+          setError(updateError.message);
+          return;
+        }
+      } else {
+        const { error: insertError } = await supabase.from("packages").insert(row);
+
+        if (insertError) {
+          setError(insertError.message);
+          return;
+        }
+      }
+
+      setSuccess(isEditing ? "Package updated successfully." : "Package created successfully.");
       if (!isEditing) {
         setForm(emptyPackageFormState);
       }
@@ -343,7 +372,7 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-md border border-forest bg-forest px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+          className="nav-cta rounded-md border-0 px-5 py-2.5 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Saving..." : editingPackage ? "Update package" : "Create package"}
         </button>

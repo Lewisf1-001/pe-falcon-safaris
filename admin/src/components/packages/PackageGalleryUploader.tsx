@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { ChangeEvent, useRef, useState } from "react";
-import { API_URL, getAdminAuthHeadersForUpload } from "@/lib/api";
+import { uploadPackageImage, deletePackageImage } from "@/lib/storage";
 import { resolvePackageImageSrc } from "@/lib/packageImages";
 import type { PackageGalleryImage } from "@/types/package";
 
@@ -44,34 +44,20 @@ export default function PackageGalleryUploader({
     setError("");
     setIsUploading(true);
 
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append("images", file);
-    });
-
     try {
-      const response = await fetch(`${API_URL}/api/admin/uploads/package-images`, {
-        method: "POST",
-        headers: getAdminAuthHeadersForUpload(),
-        body: formData,
-      });
-      const data = await response.json();
+      const uploadedImages: PackageGalleryImage[] = [];
 
-      if (!response.ok) {
-        setError(data.error || "Unable to upload images. Please try again.");
-        return;
+      for (const file of files) {
+        const url = await uploadPackageImage(file, "package-gallery");
+        uploadedImages.push({
+          url,
+          alt: defaultAltFromFilename(file.name),
+        });
       }
 
-      const uploadedImages: PackageGalleryImage[] = (data.images ?? []).map(
-        (image: { url: string; originalName?: string }) => ({
-          url: image.url,
-          alt: defaultAltFromFilename(image.originalName || "safari-photo"),
-        })
-      );
-
       onChange([...images, ...uploadedImages]);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to upload images. Please try again.");
     } finally {
       setIsUploading(false);
     }
@@ -110,7 +96,7 @@ export default function PackageGalleryUploader({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={isUploading}
-          className="rounded-md border border-forest bg-forest px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+          className="nav-cta rounded-md border-0 px-4 py-2 text-sm font-medium text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isUploading ? "Uploading..." : "Upload images"}
         </button>

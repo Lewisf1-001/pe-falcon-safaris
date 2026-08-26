@@ -1,18 +1,15 @@
 import type { NextConfig } from "next";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
 const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
-  },
-  async rewrites() {
-    return [
+    remotePatterns: [
       {
-        source: "/api/uploads/:path*",
-        destination: `${apiUrl}/api/uploads/:path*`,
+        protocol: "https",
+        hostname: "*.supabase.co",
+        pathname: "/storage/v1/object/public/**",
       },
-    ];
+    ],
   },
 };
 

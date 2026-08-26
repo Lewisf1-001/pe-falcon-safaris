@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useCurrency } from "@/components/currency/CurrencyProvider";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 import type { SafariPackage } from "@/types/package";
 
 type PackagesListProps = {
@@ -23,17 +23,36 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/packages`, {
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error: queryError } = await supabase
+        .from("packages")
+        .select("*")
+        .order("sort_order", { ascending: true });
 
-      if (!response.ok) {
-        setError(data.error || "Unable to load packages.");
+      if (queryError) {
+        setError(queryError.message);
         return;
       }
 
-      setPackages(data.packages);
+      const mapped: SafariPackage[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        duration: row.duration,
+        idealFor: row.ideal_for,
+        destinations: row.destinations ?? [],
+        highlights: row.highlights ?? [],
+        includes: row.includes ?? [],
+        galleryImages: row.gallery_images ?? [],
+        startingPrice: row.starting_price,
+        startingPriceUsd: row.starting_price_usd,
+        priceCurrency: row.price_currency,
+        priceNote: row.price_note,
+        isActive: row.is_active,
+        sortOrder: row.sort_order,
+      }));
+
+      setPackages(mapped);
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");
     } finally {
@@ -55,18 +74,18 @@ export default function PackagesList({ onEdit, reloadKey }: PackagesListProps) {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/packages/${packageId}`, {
-        method: "DELETE",
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
+      const supabase = createClient();
+      const { error: deleteError } = await supabase
+        .from("packages")
+        .delete()
+        .eq("id", packageId);
 
-      if (!response.ok) {
-        setError(data.error || "Unable to delete package.");
+      if (deleteError) {
+        setError(deleteError.message);
         return;
       }
 
-      setMessage(data.message || "Package deleted successfully.");
+      setMessage("Package deleted successfully.");
       await loadPackages();
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");

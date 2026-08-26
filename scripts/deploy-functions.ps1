@@ -9,6 +9,9 @@
       - payments
       - currency
       - admin
+      - admin-users
+      - email
+      - mpesa
 
     The script stops immediately if any function fails to deploy.
 
@@ -31,7 +34,10 @@ $functions = @(
     "bookings",
     "payments",
     "currency",
-    "admin"
+    "admin",
+    "admin-users",
+    "email",
+    "mpesa"
 )
 
 $deployed = @()

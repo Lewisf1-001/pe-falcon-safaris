@@ -11,7 +11,7 @@ type ButtonProps = {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-gold text-forest hover:bg-gold-hover border border-gold font-semibold tracking-[0.12em] uppercase",
+    "nav-cta text-forest border-0 font-semibold tracking-[0.12em] uppercase hover:opacity-90",
   outline:
     "bg-transparent text-forest border border-forest hover:bg-forest/5 font-medium tracking-[0.08em] uppercase",
   ghost:

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { dashboardStats } from "@/data/dashboard";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 export default function StatsCards() {
   const [clientCount, setClientCount] = useState<string | null>(null);
@@ -10,13 +10,13 @@ export default function StatsCards() {
   useEffect(() => {
     async function loadClientStats() {
       try {
-        const response = await fetch(`${API_URL}/api/admin/clients/stats`, {
-          headers: getAdminAuthHeaders(),
-        });
-        const data = await response.json();
+        const supabase = createClient();
+        const { count } = await supabase
+          .from("users")
+          .select("*", { count: "exact", head: true });
 
-        if (response.ok) {
-          setClientCount(String(data.total));
+        if (count !== null) {
+          setClientCount(String(count));
         }
       } catch {
         // Keep placeholder value when API is unavailable.

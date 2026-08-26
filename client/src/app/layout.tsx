@@ -1,22 +1,27 @@
 import type { Metadata } from "next";
-import { Inter, Montserrat, Outfit } from "next/font/google";
+import { Figtree, Montserrat, Outfit } from "next/font/google";
 import { CurrencyProvider } from "@/components/currency/CurrencyProvider";
 import "./globals.css";
 
-const inter = Inter({
+const figtree = Figtree({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-figtree",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
 });
 
 const montserrat = Montserrat({
   subsets: ["latin"],
   variable: "--font-montserrat",
+  display: "swap",
+  weight: ["500", "600", "700"],
 });
 
 const outfit = Outfit({
-  weight: "200",
   subsets: ["latin"],
   variable: "--font-outfit-face",
+  display: "swap",
+  weight: ["200", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -33,7 +38,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${montserrat.variable} ${outfit.variable} antialiased`}
+        className={`${figtree.variable} ${montserrat.variable} ${outfit.variable} antialiased`}
         suppressHydrationWarning
       >
         <CurrencyProvider>{children}</CurrencyProvider>

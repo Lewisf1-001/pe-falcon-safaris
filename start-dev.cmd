@@ -7,9 +7,6 @@ if exist "%NODE_DIR%\npm.cmd" (
   set "PATH=%NODE_DIR%;%PATH%"
 )
 
-echo Starting backend on http://localhost:4000...
-start "PE Falcon API" /MIN cmd /k "cd /d "%~dp0server" && set PATH=%NODE_DIR%;%PATH% && npm run dev"
-
 echo Starting frontend on http://localhost:3000...
 start "PE Falcon Client" /MIN cmd /k "cd /d "%~dp0client" && set PATH=%NODE_DIR%;%PATH% && npm run dev"
 
@@ -21,7 +18,6 @@ node "%~dp0scripts\open-client-url.cjs"
 
 echo.
 echo PE Falcon Safaris dev servers started.
-echo   API:    http://localhost:4000
 echo   Client: http://localhost:3000
 echo   Admin:  http://localhost:3001
 echo.

@@ -1,45 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { clearAdminSession, getAdminToken } from "@/lib/auth";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { useRouter } from "next/navigation";
+import { getAdminUser } from "@/lib/auth";
 
 export default function AdminAuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function verifySession() {
-      const token = getAdminToken();
+      const admin = await getAdminUser();
 
-      if (!token) {
+      if (!admin) {
         router.replace("/login");
         return;
       }
 
-      try {
-        const response = await fetch(`${API_URL}/api/admin/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          clearAdminSession();
-          router.replace("/login");
-          return;
-        }
-
-        if (!cancelled) {
-          setIsReady(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setIsReady(true);
-        }
+      if (!cancelled) {
+        setIsReady(true);
       }
     }
 
@@ -48,7 +29,7 @@ export default function AdminAuthGuard({ children }: { children: React.ReactNode
     return () => {
       cancelled = true;
     };
-  }, [router, pathname]);
+  }, [router]);
 
   if (!isReady) {
     return (

@@ -1,43 +1,114 @@
+import { createClient } from "@/lib/supabase";
+
 export type AdminUser = {
   id: string;
   username: string;
 };
 
-const TOKEN_KEY = "pe_falcon_admin_token";
-const USER_KEY = "pe_falcon_admin_user";
+export async function signInAdmin(email: string, password: string) {
+  const supabase = createClient();
 
-export function saveAdminSession(token: string, admin: AdminUser) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(admin));
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  // Check if user is an admin
+  const { data: admin, error: adminError } = await supabase
+    .from("admins")
+    .select("id, username")
+    .eq("auth_id", data.user.id)
+    .eq("status", "active")
+    .single();
+
+  if (adminError || !admin) {
+    await supabase.auth.signOut();
+    throw new Error("Access denied. You are not an admin user.");
+  }
+
+  return { session: data.session, admin };
 }
 
-export function getAdminToken() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return localStorage.getItem(TOKEN_KEY);
+export async function signOutAdmin() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
 }
 
-export function getAdminUser(): AdminUser | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+export async function clearAdminSession() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
+}
 
-  const raw = localStorage.getItem(USER_KEY);
+export async function resetAdminPassword(email: string) {
+  const supabase = createClient();
 
-  if (!raw) {
-    return null;
-  }
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
 
-  try {
-    return JSON.parse(raw) as AdminUser;
-  } catch {
-    return null;
+  if (error) {
+    throw new Error(error.message);
   }
 }
 
-export function clearAdminSession() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+export async function updateAdminPassword(newPassword: string) {
+  const supabase = createClient();
+
+  const { error } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getAdminUser(): Promise<AdminUser | null> {
+  const supabase = createClient();
+
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  // Get admin profile from admins table
+  const { data: admin } = await supabase
+    .from("admins")
+    .select("id, username")
+    .eq("auth_id", user.id)
+    .eq("status", "active")
+    .single();
+
+  if (!admin) {
+    return null;
+  }
+
+  return {
+    id: admin.id,
+    username: admin.username,
+  };
+}
+
+export async function getAdminSession() {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session;
+}
+
+export function onAdminAuthStateChange(callback: (admin: AdminUser | null) => void) {
+  const supabase = createClient();
+
+  return supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      const admin = await getAdminUser();
+      callback(admin);
+    } else {
+      callback(null);
+    }
+  });
 }

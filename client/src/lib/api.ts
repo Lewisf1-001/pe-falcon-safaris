@@ -1,14 +1,12 @@
-import { getAuthToken } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-
-export function getAuthHeaders() {
-  const token = getAuthToken();
-
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+export function getSupabaseClient() {
+  return createClient();
 }
 
-export { API_URL };
+export async function apiRequest<T>(
+  fn: (supabase: ReturnType<typeof createClient>) => Promise<T>
+): Promise<T> {
+  const supabase = createClient();
+  return fn(supabase);
+}

@@ -17,10 +17,11 @@ export default function AdminWelcome() {
   const [dateLabel, setDateLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    const admin = getAdminUser();
-    if (admin?.username) {
-      setUsername(admin.username);
-    }
+    getAdminUser().then((admin) => {
+      if (admin?.username) {
+        setUsername(admin.username);
+      }
+    });
     setDateLabel(formatDashboardDate());
   }, []);
 

@@ -2,8 +2,8 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { API_URL, getAuthHeaders } from "@/lib/api";
-import { AuthUser, getAuthToken, updateAuthUser } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
+import { AuthUser, getUser } from "@/lib/auth";
 
 type FormState = {
   firstName: string;
@@ -24,36 +24,20 @@ export default function ProfileForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const token = getAuthToken();
-
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-
     async function loadProfile() {
-      try {
-        const response = await fetch(`${API_URL}/api/auth/me`, {
-          headers: getAuthHeaders(),
-        });
-        const data = await response.json();
+      const user = await getUser();
 
-        if (!response.ok) {
-          router.replace("/login");
-          return;
-        }
-
-        const user = data.user as AuthUser;
-        setForm({
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-        });
-      } catch {
-        setError("Unable to load your profile. Make sure the API is running.");
-      } finally {
-        setIsLoading(false);
+      if (!user) {
+        router.replace("/login");
+        return;
       }
+
+      setForm({
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+      });
+      setIsLoading(false);
     }
 
     loadProfile();
@@ -70,28 +54,59 @@ export default function ProfileForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/auth/profile`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(form),
-      });
+      const supabase = createClient();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to update profile. Please try again.");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError("You must be logged in.");
         return;
       }
 
-      updateAuthUser(data.user);
+      // Get user profile
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_id", user.id)
+        .single();
+
+      if (!profile) {
+        setError("User profile not found.");
+        return;
+      }
+
+      // Check if email changed
+      const emailChanged = user.email !== form.email.toLowerCase();
+
+      if (emailChanged) {
+        // Update email in Supabase Auth
+        const { error: emailError } = await supabase.auth.updateUser({
+          email: form.email.toLowerCase(),
+        });
+
+        if (emailError) throw emailError;
+      }
+
+      // Update profile in users table
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          first_name: form.firstName,
+          last_name: form.lastName,
+          email: form.email.toLowerCase(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", profile.id);
+
+      if (updateError) throw updateError;
+
       setSuccess(
-        data.requiresEmailVerification
+        emailChanged
           ? "Profile updated. Please check your email to verify your new address."
-          : data.message || "Profile updated successfully."
+          : "Profile updated successfully."
       );
       router.refresh();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update profile.");
     } finally {
       setIsSubmitting(false);
     }
@@ -165,7 +180,7 @@ export default function ProfileForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-none border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full nav-cta rounded-none border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Saving..." : "Save changes"}
       </button>

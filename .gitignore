@@ -21,7 +21,6 @@ dist/
 build/
 .next/
 out/
-.netlify/
 *.log
 
 # Dev server state

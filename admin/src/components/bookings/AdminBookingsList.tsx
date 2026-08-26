@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 type AdminBooking = {
   id: number;
@@ -34,19 +34,36 @@ export default function AdminBookingsList() {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/bookings`, {
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
+      const supabase = createClient();
 
-      if (!response.ok) {
-        setError(data.error || "Unable to load bookings.");
-        return;
-      }
+      const { data, error: fetchError } = await supabase
+        .from("bookings")
+        .select(`
+          *,
+          packages!bookings_package_id_fkey (name, slug),
+          users!bookings_user_id_fkey (first_name, last_name, email)
+        `)
+        .order("created_at", { ascending: false });
 
-      setBookings(data.bookings);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+      if (fetchError) throw fetchError;
+
+      const formattedBookings = (data || []).map((b) => ({
+        id: Number(b.id),
+        packageName: b.packages?.name,
+        packageSlug: b.packages?.slug,
+        travelDate: b.travel_date?.slice(0, 10),
+        guests: b.guests,
+        totalPriceUsd: Number(b.total_price_usd),
+        status: b.status,
+        clientName: `${b.users?.first_name} ${b.users?.last_name}`.trim(),
+        clientEmail: b.users?.email,
+        notes: b.notes,
+        createdAt: b.created_at,
+      }));
+
+      setBookings(formattedBookings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load bookings.");
     } finally {
       setIsLoading(false);
     }
@@ -62,22 +79,19 @@ export default function AdminBookingsList() {
     setMessage("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/bookings/${bookingId}`, {
-        method: "PATCH",
-        headers: getAdminAuthHeaders(),
-        body: JSON.stringify({ status }),
-      });
-      const data = await response.json();
+      const supabase = createClient();
 
-      if (!response.ok) {
-        setError(data.error || "Unable to update booking.");
-        return;
-      }
+      const { error: updateError } = await supabase
+        .from("bookings")
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq("id", bookingId);
 
-      setMessage(data.message || "Booking updated.");
+      if (updateError) throw updateError;
+
+      setMessage("Booking updated.");
       await loadBookings();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update booking.");
     } finally {
       setUpdatingId(null);
     }

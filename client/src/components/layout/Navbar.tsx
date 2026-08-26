@@ -28,7 +28,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-5 lg:px-10">
         <Link
           href="/"
-          className="font-calligraphy shrink-0 text-2xl leading-none text-gold sm:text-3xl"
+          className="font-calligraphy shrink-0 text-2xl leading-none text-champagne sm:text-3xl"
         >
           PE Falcon Safaris
         </Link>
@@ -44,7 +44,7 @@ export default function Navbar() {
                   href={link.href}
                   className={`font-display text-[11px] font-medium uppercase tracking-[0.22em] transition-colors duration-300 lg:text-xs ${
                     active
-                      ? "text-gold-muted"
+                      ? "text-champagne"
                       : "text-white/55 hover:text-white/90"
                   }`}
                 >

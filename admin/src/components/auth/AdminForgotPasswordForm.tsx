@@ -2,8 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { resetAdminPassword } from "@/lib/auth";
 
 export default function AdminForgotPasswordForm() {
   const [email, setEmail] = useState("");
@@ -18,26 +17,14 @@ export default function AdminForgotPasswordForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to send reset email. Please try again.");
-        return;
-      }
+      await resetAdminPassword(email);
 
       setSuccess(
-        data.message ||
-          "If an account exists for that email, a password reset link has been sent."
+        "If an account exists for that email, a password reset link has been sent."
       );
       setEmail("");
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send reset email. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -75,7 +62,7 @@ export default function AdminForgotPasswordForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-md border border-forest bg-forest px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+        className="nav-cta w-full rounded-md border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Sending..." : "Send reset link"}
       </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 type AdminPayment = {
   id: string;
@@ -45,17 +45,54 @@ export default function AdminPaymentsList() {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/payments`, {
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error: queryError } = await supabase
+        .from("payments")
+        .select(`
+          id,
+          amount_usd,
+          method,
+          provider,
+          phone,
+          card_last4,
+          card_brand,
+          cardholder_name,
+          external_ref,
+          status,
+          created_at,
+          bookings (
+            travel_date,
+            packages ( name ),
+            users ( first_name, last_name, email )
+          )
+        `)
+        .order("created_at", { ascending: false });
 
-      if (!response.ok) {
-        setError(data.error || "Unable to load payments.");
+      if (queryError) {
+        setError(queryError.message);
         return;
       }
 
-      setPayments(data.payments);
+      const mapped: AdminPayment[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        amountUsd: row.amount_usd,
+        method: row.method,
+        provider: row.provider,
+        phone: row.phone,
+        cardLast4: row.card_last4,
+        cardBrand: row.card_brand,
+        externalRef: row.external_ref,
+        status: row.status,
+        packageName: row.bookings?.packages?.name ?? null,
+        travelDate: row.bookings?.travel_date ?? null,
+        clientName: row.bookings?.users
+          ? `${row.bookings.users.first_name} ${row.bookings.users.last_name}`
+          : "Unknown",
+        clientEmail: row.bookings?.users?.email ?? "",
+        createdAt: row.created_at,
+      }));
+
+      setPayments(mapped);
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");
     } finally {

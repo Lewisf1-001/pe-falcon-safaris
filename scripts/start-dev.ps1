@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
-$ServerDir = Join-Path $ProjectRoot "server"
 $ClientDir = Join-Path $ProjectRoot "client"
+$AdminDir = Join-Path $ProjectRoot "admin"
 $StateFile = Join-Path $PSScriptRoot ".dev-servers.json"
 $LogsDir = Join-Path $PSScriptRoot "logs"
 
@@ -44,7 +44,7 @@ npm run dev *>&1 | Tee-Object -FilePath '$LogFile'
     return @{
         name = $Name
         pid = $process.Id
-        port = if ($Name -eq "server") { 4000 } else { 3000 }
+        port = if ($Name -eq "admin") { 3001 } else { 3000 }
         log = $LogFile
     }
 }
@@ -70,37 +70,37 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Write-Error "npm not found. Install Node.js and restart your terminal."
 }
 
-if (-not (Test-Path $ServerDir)) { Write-Error "Server directory not found: $ServerDir" }
 if (-not (Test-Path $ClientDir)) { Write-Error "Client directory not found: $ClientDir" }
+if (-not (Test-Path $AdminDir)) { Write-Error "Admin directory not found: $AdminDir" }
 
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
 if (Test-Path $StateFile) {
     $existing = Get-Content $StateFile -Raw | ConvertFrom-Json
-    $serverUp = Test-ServerRunning -Port 4000
     $clientUp = Test-ServerRunning -Port 3000
+    $adminUp = Test-ServerRunning -Port 3001
 
-    if ($serverUp -or $clientUp) {
+    if ($clientUp -or $adminUp) {
         Write-Host "Dev servers appear to be running already."
-        Write-Host "  API:    http://localhost:4000"
         Write-Host "  Client: http://localhost:3000"
+        Write-Host "  Admin:  http://localhost:3001"
         Write-Host "Run scripts/stop-dev.ps1 first if you want to restart them."
         exit 0
     }
 }
 
-$serverLog = Join-Path $LogsDir "server.log"
 $clientLog = Join-Path $LogsDir "client.log"
+$adminLog = Join-Path $LogsDir "admin.log"
 
-Write-Host "Starting backend (port 4000)..."
-$server = Start-DevProcess -Name "server" -WorkingDirectory $ServerDir -LogFile $serverLog
-
-Write-Host "Starting frontend (port 3000)..."
+Write-Host "Starting client (port 3000)..."
 $client = Start-DevProcess -Name "client" -WorkingDirectory $ClientDir -LogFile $clientLog
+
+Write-Host "Starting admin (port 3001)..."
+$admin = Start-DevProcess -Name "admin" -WorkingDirectory $AdminDir -LogFile $adminLog
 
 $state = @{
     startedAt = (Get-Date).ToString("o")
-    processes = @($server, $client)
+    processes = @($client, $admin)
 }
 
 $state | ConvertTo-Json -Depth 4 | Set-Content $StateFile -Encoding UTF8
@@ -109,11 +109,11 @@ Open-ChromeClient
 
 Write-Host ""
 Write-Host "PE Falcon Safaris dev servers started."
-Write-Host "  API:    http://localhost:4000"
 Write-Host "  Client: http://localhost:3000"
+Write-Host "  Admin:  http://localhost:3001"
 Write-Host ""
 Write-Host "Logs:"
-Write-Host "  $serverLog"
 Write-Host "  $clientLog"
+Write-Host "  $adminLog"
 Write-Host ""
 Write-Host "Stop with: scripts/stop-dev.ps1"

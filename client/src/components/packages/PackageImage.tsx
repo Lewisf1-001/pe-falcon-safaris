@@ -7,20 +7,12 @@ type PackageImageProps = {
   sizes?: string;
   className?: string;
   priority?: boolean;
+  quality?: number;
 };
 
-export function isUploadedPackageImage(url: string) {
-  return url.includes("/api/uploads/package-images/");
-}
-
 export function resolvePackageImageSrc(url: string) {
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    try {
-      const parsed = new URL(url);
-      return `${parsed.pathname}${parsed.search}`;
-    } catch {
-      return url;
-    }
+  if (!(url.startsWith("http://") || url.startsWith("https://"))) {
+    return url;
   }
 
   return url;
@@ -33,6 +25,7 @@ export default function PackageImage({
   sizes,
   className,
   priority = false,
+  quality = 75,
 }: PackageImageProps) {
   const imageSrc = resolvePackageImageSrc(src);
 
@@ -44,7 +37,8 @@ export default function PackageImage({
       sizes={sizes}
       className={className}
       priority={priority}
-      unoptimized
+      quality={quality}
+      loading={priority ? undefined : "lazy"}
     />
   );
 }

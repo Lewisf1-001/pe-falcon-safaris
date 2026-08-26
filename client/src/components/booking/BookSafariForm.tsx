@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCurrency } from "@/components/currency/CurrencyProvider";
-import { API_URL, getAuthHeaders } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { createClient } from "@/lib/supabase";
+import { getUser } from "@/lib/auth";
 import type { SafariPackage } from "@/types/package";
 
 type BookSafariFormProps = {
@@ -42,12 +42,15 @@ export default function BookSafariForm({ safariPackage }: BookSafariFormProps) {
   }, [form.guests, formatFrom, safariPackage.priceCurrency, safariPackage.startingPrice]);
 
   useEffect(() => {
-    if (!getAuthToken()) {
-      router.replace(`/login?next=${encodeURIComponent(`/packages/${safariPackage.slug}/book`)}`);
-      return;
+    async function checkAuth() {
+      const user = await getUser();
+      if (!user) {
+        router.replace(`/login?next=${encodeURIComponent(`/packages/${safariPackage.slug}/book`)}`);
+        return;
+      }
+      setIsReady(true);
     }
-
-    setIsReady(true);
+    checkAuth();
   }, [router, safariPackage.slug]);
 
   function handleChange(field: keyof FormState, value: string) {
@@ -61,32 +64,110 @@ export default function BookSafariForm({ safariPackage }: BookSafariFormProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/bookings`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          packageSlug: safariPackage.slug,
-          travelDate: form.travelDate,
-          guests: Number(form.guests),
-          notes: form.notes.trim() || null,
-        }),
-      });
+      const supabase = createClient();
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to submit booking. Please try again.");
+      // Get user profile
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError("You must be logged in to book.");
         return;
       }
 
-      setSuccess(data.message || "Booking submitted. Check your email for confirmation.");
+      const { data: profile } = await supabase
+        .from("users")
+        .select("id, first_name, last_name")
+        .eq("auth_id", user.id)
+        .single();
+
+      if (!profile) {
+        setError("User profile not found.");
+        return;
+      }
+
+      // Get package
+      const { data: pkg } = await supabase
+        .from("packages")
+        .select("id, name, starting_price, starting_price_usd")
+        .eq("slug", safariPackage.slug)
+        .single();
+
+      if (!pkg) {
+        setError("Package not found.");
+        return;
+      }
+
+      // Calculate price
+      const guests = Number(form.guests);
+      const totalPriceUsd = Number(pkg.starting_price_usd) * guests;
+
+      // Create booking
+      const { error: bookingError } = await supabase
+        .from("bookings")
+        .insert({
+          user_id: profile.id,
+          package_id: pkg.id,
+          travel_date: form.travelDate,
+          guests,
+          total_price_usd: totalPriceUsd,
+          status: "pending",
+          notes: form.notes.trim() || null,
+        });
+
+      if (bookingError) throw bookingError;
+
+      // Send booking confirmation email via Edge Function
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+        await fetch(`${supabaseUrl}/functions/v1/email`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          },
+          body: JSON.stringify({
+            action: "booking-confirmation",
+            clientEmail: user.email,
+            clientName: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Customer",
+            packageName: safariPackage.name,
+            travelDate: form.travelDate,
+            guests,
+            total: totalPriceUsd,
+          }),
+        });
+
+        // Notify admins
+        await fetch(`${supabaseUrl}/functions/v1/email`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          },
+          body: JSON.stringify({
+            action: "admin-notification",
+            clientEmail: user.email,
+            clientName: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Customer",
+            packageName: safariPackage.name,
+            travelDate: form.travelDate,
+            guests,
+            total: totalPriceUsd,
+          }),
+        });
+      } catch {
+        // Email sending is non-critical; booking is already created
+      }
+
+      setSuccess("Booking submitted. Check your email for confirmation.");
       setForm({ travelDate: "", guests: "1", notes: "" });
 
       window.setTimeout(() => {
         router.push("/bookings");
       }, 1500);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to submit booking.");
     } finally {
       setIsSubmitting(false);
     }
@@ -179,7 +260,7 @@ export default function BookSafariForm({ safariPackage }: BookSafariFormProps) {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full rounded-none border border-gold bg-gold px-5 py-3 text-sm font-semibold text-forest transition-colors hover:bg-gold-hover disabled:cursor-not-allowed disabled:opacity-70"
+        className="w-full nav-cta rounded-none border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {isSubmitting ? "Submitting..." : "Confirm reservation"}
       </button>

@@ -3,18 +3,24 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AuthUser, clearAuthSession, getAuthUser } from "@/lib/auth";
+import { AuthUser, getUser, onAuthStateChange, signOut } from "@/lib/auth";
 
 export default function AuthNav() {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    setUser(getAuthUser());
+    getUser().then(setUser);
+
+    const { data: { subscription } } = onAuthStateChange((u) => {
+      setUser(u);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  function handleLogout() {
-    clearAuthSession();
+  async function handleLogout() {
+    await signOut();
     setUser(null);
     router.push("/");
     router.refresh();

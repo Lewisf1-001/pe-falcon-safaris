@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 export type ClientListItem = {
   id: number;
@@ -34,18 +34,47 @@ export default function ClientsList({
     setError("");
 
     try {
-      const params = query?.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
-      const response = await fetch(`${API_URL}/api/admin/clients${params}`, {
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
+      const supabase = createClient();
 
-      if (!response.ok) {
-        setError(data.error || "Unable to load clients.");
+      let queryBuilder = supabase
+        .from("users")
+        .select(`
+          id,
+          first_name,
+          last_name,
+          email,
+          email_verified,
+          created_at,
+          bookings!user_id ( id )
+        `);
+
+      const trimmed = query?.trim();
+      if (trimmed) {
+        queryBuilder = queryBuilder.or(
+          `first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%,email.ilike.%${trimmed}%`
+        );
+      }
+
+      queryBuilder = queryBuilder.order("created_at", { ascending: false });
+
+      const { data, error: queryError } = await queryBuilder;
+
+      if (queryError) {
+        setError(queryError.message);
         return;
       }
 
-      setClients(data.clients);
+      const mapped: ClientListItem[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        email: row.email,
+        emailVerified: row.email_verified,
+        createdAt: row.created_at,
+        bookingCount: row.bookings?.length ?? 0,
+      }));
+
+      setClients(mapped);
     } catch {
       setError("Unable to reach the server. Make sure the API is running.");
     } finally {

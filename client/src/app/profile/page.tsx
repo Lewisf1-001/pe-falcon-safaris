@@ -10,11 +10,11 @@ export default function ProfilePage() {
       <main className="hero-stripes min-h-[calc(100vh-64px)] py-12 sm:py-16">
         <div className="mx-auto w-full max-w-lg px-6">
           <div className="mb-8 text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-champagne">
               My Account
             </p>
-            <h1 className="mt-2 text-3xl font-bold text-forest">Profile settings</h1>
-            <p className="mt-2 text-sm text-gray-500">
+            <h1 className="mt-2 text-3xl font-bold text-white">Profile settings</h1>
+            <p className="mt-2 text-sm text-white/70">
               Update your personal details and keep your account secure.
             </p>
           </div>
@@ -41,8 +41,8 @@ export default function ProfilePage() {
             </section>
           </div>
 
-          <p className="mt-6 text-center text-sm text-gray-500">
-            <Link href="/" className="font-medium text-forest hover:underline">
+          <p className="mt-6 text-center text-sm text-white/65">
+            <Link href="/" className="font-medium text-champagne hover:text-champagne-deep hover:underline">
               Back to home
             </Link>
           </p>

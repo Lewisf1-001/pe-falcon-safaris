@@ -21,4 +21,6 @@ export type SafariPackage = {
   priceNote: string | null;
   isActive: boolean;
   sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
 };

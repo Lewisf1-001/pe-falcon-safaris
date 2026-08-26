@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { callEdgeFunction } from "@/lib/api";
 
 type InviteAdminFormProps = {
   onInvited: () => void;
@@ -21,25 +21,17 @@ export default function InviteAdminForm({ onInvited }: InviteAdminFormProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/users`, {
+      const data = await callEdgeFunction<{ message?: string }>("admin-users", {
         method: "POST",
-        headers: getAdminAuthHeaders(),
-        body: JSON.stringify({ username, email }),
+        body: { action: "invite", username, email },
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to send invite. Please try again.");
-        return;
-      }
 
       setSuccess(data.message || "Admin invite sent successfully.");
       setUsername("");
       setEmail("");
       onInvited();
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send invite. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,7 +91,7 @@ export default function InviteAdminForm({ onInvited }: InviteAdminFormProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-md border border-forest bg-forest px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-forest-light disabled:cursor-not-allowed disabled:opacity-70"
+          className="nav-cta rounded-md border-0 px-5 py-2.5 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? "Sending invite..." : "Send invite"}
         </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { API_URL, getAdminAuthHeaders } from "@/lib/api";
+import { callEdgeFunction } from "@/lib/api";
 
 export type AdminListItem = {
   id: string;
@@ -28,19 +28,10 @@ export default function AdminUsersList() {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/users`, {
-        headers: getAdminAuthHeaders(),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to load admin users.");
-        return;
-      }
-
+      const data = await callEdgeFunction<{ admins: AdminListItem[] }>("admin-users");
       setAdmins(data.admins);
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load admin users.");
     } finally {
       setIsLoading(false);
     }
@@ -56,20 +47,13 @@ export default function AdminUsersList() {
     setError("");
 
     try {
-      const response = await fetch(`${API_URL}/api/admin/users/${adminId}/resend-invite`, {
+      const data = await callEdgeFunction<{ message?: string }>("admin-users", {
         method: "POST",
-        headers: getAdminAuthHeaders(),
+        body: { action: "resend-invite", adminId },
       });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Unable to resend invite.");
-        return;
-      }
-
       setMessage(data.message || "Invite resent successfully.");
-    } catch {
-      setError("Unable to reach the server. Make sure the API is running.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resend invite.");
     } finally {
       setResendingId(null);
     }

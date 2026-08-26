@@ -9,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { API_URL } from "@/lib/api";
 import {
   convertAmount,
   convertFromUsd,
@@ -45,28 +44,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setCurrencyState(getStoredCurrency());
-
-    async function loadRates() {
-      try {
-        const response = await fetch(`${API_URL}/api/currency`);
-        const data = await response.json();
-
-        if (response.ok && data.rates) {
-          setRates({
-            USD: Number(data.rates.USD) || 1,
-            KES: Number(data.rates.KES) || DEFAULT_RATES.KES,
-            EUR: Number(data.rates.EUR) || DEFAULT_RATES.EUR,
-            GBP: Number(data.rates.GBP) || DEFAULT_RATES.GBP,
-          });
-        }
-      } catch {
-        // Keep default rates when the API is offline.
-      } finally {
-        setIsReady(true);
-      }
-    }
-
-    loadRates();
+    setIsReady(true);
   }, []);
 
   const setCurrency = useCallback((next: CurrencyCode) => {
