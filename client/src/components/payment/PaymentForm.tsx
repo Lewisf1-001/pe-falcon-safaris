@@ -214,9 +214,10 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
             }),
           });
 
-          const stkData = await stkResponse.json();
+          const stkContentType = stkResponse.headers.get("content-type") || "";
+          const stkText = await stkResponse.text();
 
-          if (!stkResponse.ok) {
+          if (!stkResponse.ok || !stkContentType.includes("application/json")) {
             setSuccess(
               "Payment record created. M-Pesa prompt could not be sent. Please try again or contact support."
             );

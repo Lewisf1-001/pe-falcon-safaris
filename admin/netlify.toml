@@ -1,7 +1,8 @@
 # PE Falcon Safaris — admin panel (Next.js)
-# Used when this Netlify site's base directory is `admin`.
+# Netlify reads this file from the repository root on deploy.
 
 [build]
+  base = "admin"
   command = "npm install && npm run build"
   publish = ".next"
 

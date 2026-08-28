@@ -23,55 +23,68 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Extract and verify the caller's JWT
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Accept-invite is public — no auth required
+    const isPublicAction = req.method === "POST" && path === "admin-users";
+
+    let callerAdmin: Record<string, unknown> | null = null;
+
+    if (!isPublicAction) {
+      // Extract and verify the caller's JWT
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(
+          JSON.stringify({ error: "Missing authorization header" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const token = authHeader.replace("Bearer ", "");
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
       );
-    }
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+      // Verify caller is an active admin
+      const { data: admin, error: callerAdminError } = await supabaseAdmin
+        .from("admins")
+        .select("*")
+        .eq("auth_id", user.id)
+        .eq("status", "active")
+        .single();
 
-    // Verify caller is an active admin
-    const { data: callerAdmin, error: callerAdminError } = await supabaseAdmin
-      .from("admins")
-      .select("*")
-      .eq("auth_id", user.id)
-      .eq("status", "active")
-      .single();
+      if (callerAdminError || !admin) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden: Not an active admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-    if (callerAdminError || !callerAdmin) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Not an active admin" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+      callerAdmin = admin;
 
-    // Verify caller is a superadmin for invite/management operations
-    if (req.method === "POST" && callerAdmin.role !== "superadmin") {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Only superadmins can manage admin users" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      // Verify caller is a superadmin for invite/management operations
+      if (req.method === "POST" && callerAdmin.role !== "superadmin") {
+        // Allow accept-invite without superadmin check (public action)
+        const body = await req.clone().json().catch(() => ({}));
+        if (body.action !== "accept-invite" && body.action !== "validate-invite") {
+          return new Response(
+            JSON.stringify({ error: "Forbidden: Only superadmins can manage admin users" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
     }
 
     // GET /admin-users - List all admins
@@ -164,7 +177,7 @@ serve(async (req: Request) => {
               admin_id: newAdmin.id,
               username,
             },
-            redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:3000"}/admin/accept-invite?token=${inviteToken}`,
+            redirectTo: `${Deno.env.get("SITE_URL") || Deno.env.get("CLIENT_URL") || "https://pefalconsafaris.com"}/accept-invite?token=${inviteToken}`,
           });
 
         if (inviteError) {
@@ -238,7 +251,7 @@ serve(async (req: Request) => {
               admin_id: admin.id,
               username: admin.username,
             },
-            redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:3000"}/admin/accept-invite?token=${inviteToken}`,
+            redirectTo: `${Deno.env.get("SITE_URL") || Deno.env.get("CLIENT_URL") || "https://pefalconsafaris.com"}/accept-invite?token=${inviteToken}`,
           }
         );
 
@@ -248,6 +261,44 @@ serve(async (req: Request) => {
 
         return new Response(
           JSON.stringify({ message: "Invite resent successfully" }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Validate invite token (public — no auth required)
+      if (action === "validate-invite") {
+        const { token } = body;
+
+        if (!token) {
+          return new Response(
+            JSON.stringify({ error: "Token is required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { data: admin, error: adminError } = await supabaseAdmin
+          .from("admins")
+          .select("username, email, invite_expires")
+          .eq("invite_token", token)
+          .eq("status", "invited")
+          .single();
+
+        if (adminError || !admin) {
+          return new Response(
+            JSON.stringify({ error: "Invalid invite token" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        if (admin.invite_expires && new Date(admin.invite_expires) < new Date()) {
+          return new Response(
+            JSON.stringify({ error: "Invite token has expired" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ username: admin.username, email: admin.email }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
