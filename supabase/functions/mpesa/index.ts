@@ -7,6 +7,49 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+// Fallback KES per USD when the currency service is unreachable.
+// Keep in sync with client/src/lib/currency.ts and supabase/functions/currency/index.ts.
+const FALLBACK_KES_PER_USD = 129;
+
+const ratesCache: { kesPerUsd: number; fetchedAt: number } = {
+  kesPerUsd: FALLBACK_KES_PER_USD,
+  fetchedAt: 0,
+};
+
+// Short cache: STK pushes in quick succession shouldn't each hit the API.
+const RATES_TTL_MS = 10 * 60 * 1000;
+
+/** Live KES-per-USD rate for charging M-Pesa amounts; falls back to the fixed rate. */
+async function getKesPerUsd(): Promise<number> {
+  const now = Date.now();
+  if (ratesCache.fetchedAt && now - ratesCache.fetchedAt < RATES_TTL_MS) {
+    return ratesCache.kesPerUsd;
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const res = await fetch(`${supabaseUrl}/functions/v1/currency?base=USD`, {
+      headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}` },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const rate = Number(data?.rates?.KES);
+      if (Number.isFinite(rate) && rate > 0) {
+        ratesCache.kesPerUsd = rate;
+        ratesCache.fetchedAt = now;
+        return rate;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to fetch live KES rate, using fallback:", error);
+  }
+
+  ratesCache.fetchedAt = now;
+  return ratesCache.kesPerUsd;
+}
+
 const tokenCache: { token: string; expiresAt: number } = { token: "", expiresAt: 0 };
 
 function getBaseUrl(): string {
@@ -74,20 +117,131 @@ function getTimestamp(): string {
   return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
-async function initiateSTKPush(phone: string, amount: number, accountRef: string): Promise<Response> {
+/** Convert a USD amount to whole KES for M-Pesa (M-Pesa only accepts integer KES). */
+async function usdToKes(amountUsd: number): Promise<number> {
+  const rate = await getKesPerUsd();
+  return Math.max(1, Math.round(amountUsd * rate));
+}
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+class HttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+type AuthedClient = ReturnType<typeof createClient>;
+
+/** Create a service-role client and authenticate the caller's JWT. Throws HttpError on failure. */
+async function authenticate(req: Request): Promise<{ supabase: AuthedClient; userId: string }> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    throw new HttpError(401, "Authentication required");
+  }
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+  if (authError || !user) {
+    throw new HttpError(401, "Invalid authentication");
+  }
+
+  return { supabase, userId: user.id };
+}
+
+type PaymentRow = {
+  id: string;
+  booking_id: number;
+  user_id: number;
+  amount_usd: number | string;
+  method: string;
+  provider: string | null;
+  phone: string | null;
+  external_ref: string | null;
+  mpesa_checkout_request_id: string | null;
+  mpesa_merchant_request_id: string | null;
+  mpesa_receipt_number: string | null;
+  status: string;
+};
+
+type StkPushBody = {
+  phone?: string;
+  amount?: number | string;
+  accountReference?: string;
+  paymentId?: string;
+};
+
+async function handleStkPush(req: Request, body: StkPushBody): Promise<Response> {
+  const { supabase, userId } = await authenticate(req);
+  const { phone, amount, paymentId } = body;
+
+  if (!phone || !amount || !paymentId) {
+    return json({ error: "Phone number, amount, and paymentId are required" }, 400);
+  }
+
+  const numAmountUsd = Number(amount);
+  if (isNaN(numAmountUsd) || numAmountUsd <= 0) {
+    return json({ error: "Invalid amount" }, 400);
+  }
+
+  const normalizedPhone = normalizePhone(phone);
+  const phoneRegex = /^(?:254|\+?254|0)?[17]\d{8}$/;
+  if (!phoneRegex.test(normalizedPhone)) {
+    return json({ error: "Invalid phone number format" }, 400);
+  }
+
+  // Load the payment row the client just created, so M-Pesa IDs can be attached
+  // to the correct record and matched again in the callback.
+  const { data: payment, error: paymentError } = await supabase
+    .from("payments")
+    .select("id, booking_id, user_id, amount_usd, external_ref, status")
+    .eq("id", paymentId)
+    .single();
+
+  if (paymentError || !payment) {
+    return json({ error: "Payment record not found" }, 404);
+  }
+
+  const typedPayment = payment as PaymentRow;
+
+  if (typedPayment.status !== "pending") {
+    return json({ error: "Payment is not pending" }, 400);
+  }
+
+  // Verify the caller owns this payment via their profile
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id")
+    .eq("auth_id", userId)
+    .single();
+
+  if (!profile || Number(profile.id) !== Number(typedPayment.user_id)) {
+    return json({ error: "Payment does not belong to the authenticated user" }, 403);
+  }
+
+  const amountKes = await usdToKes(numAmountUsd);
   const shortcode = Deno.env.get("MPESA_SHORTCODE")!;
   const passkey = Deno.env.get("MPESA_PASSKEY")!;
   const baseUrl = getBaseUrl();
 
-  const normalizedPhone = normalizePhone(phone);
   const timestamp = getTimestamp();
   const password = generatePassword(shortcode, passkey, timestamp);
-
   const token = await getOAuthToken();
 
-  const callbackUrl = `${supabaseUrl}/functions/v1/mpesa/callback`;
+  const callbackUrl = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/mpesa/callback`;
+  const accountRef = typedPayment.external_ref || `PAY-${typedPayment.id}`;
 
   const stkRes = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
     method: "POST",
@@ -100,7 +254,7 @@ async function initiateSTKPush(phone: string, amount: number, accountRef: string
       Password: password,
       Timestamp: timestamp,
       TransactionType: "CustomerPayBillOnline",
-      Amount: amount,
+      Amount: amountKes,
       PartyA: normalizedPhone,
       PartyB: shortcode,
       PhoneNumber: normalizedPhone,
@@ -112,183 +266,212 @@ async function initiateSTKPush(phone: string, amount: number, accountRef: string
 
   if (!stkRes.ok) {
     const errText = await stkRes.text();
-    return new Response(JSON.stringify({ error: `STK push failed: ${errText}` }), {
-      status: stkRes.status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Mark the payment failed so the user can retry cleanly
+    await supabase
+      .from("payments")
+      .update({ status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", typedPayment.id);
+    return json({ error: `STK push failed: ${errText}` }, 502);
   }
 
   const stkData = await stkRes.json();
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-  const { error: dbError } = await supabase.from("payments").insert({
-    checkout_request_id: stkData.CheckoutRequestID,
-    merchant_request_id: stkData.MerchantRequestID,
-    phone_number: normalizedPhone,
-    amount: amount,
-    account_reference: accountRef,
-    status: "pending",
-    raw_response: stkData,
-  });
-
-  if (dbError) {
-    console.error("Failed to store payment record:", dbError);
-  }
-
-  return new Response(
-    JSON.stringify({
-      success: true,
-      CheckoutRequestID: stkData.CheckoutRequestID,
-      MerchantRequestID: stkData.MerchantRequestID,
-      ResponseCode: stkData.ResponseCode,
-      ResponseDescription: stkData.ResponseDescription,
-      CustomerMessage: stkData.CustomerMessage,
-    }),
-    {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    }
-  );
-}
-
-async function handleCallback(request: Request): Promise<Response> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const passkey = Deno.env.get("MPESA_PASSKEY")!;
-  const shortcode = Deno.env.get("MPESA_SHORTCODE")!;
-
-  const body = await request.json();
-
-  const stkCallback = body.Body?.stkCallback;
-  if (!stkCallback) {
-    return new Response(JSON.stringify({ ResultCode: 0, ResultDesc: "Invalid callback" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const merchantRequestId = stkCallback.MerchantRequestID;
-  const checkoutRequestId = stkCallback.CheckoutRequestID;
-  const resultCode = stkCallback.ResultCode;
-  const resultDesc = stkCallback.ResultDesc;
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-  const { data: payment, error: fetchError } = await supabase
-    .from("payments")
-    .select("*")
-    .eq("checkout_request_id", checkoutRequestId)
-    .single();
-
-  if (fetchError || !payment) {
-    console.error("Payment record not found:", fetchError);
-    return new Response(
-      JSON.stringify({ ResultCode: 0, ResultDesc: "Payment record not found" }),
-      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  if (stkData.ResponseCode !== "0") {
+    // Safaricom accepted the request shape but rejected the push (e.g. bad phone)
+    await supabase
+      .from("payments")
+      .update({ status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", typedPayment.id);
+    return json(
+      { error: stkData.ResponseDescription || "STK push rejected", ResponseCode: stkData.ResponseCode },
+      502
     );
   }
 
+  // Attach the M-Pesa request IDs to the existing payment record
+  const { error: dbError } = await supabase
+    .from("payments")
+    .update({
+      mpesa_checkout_request_id: stkData.CheckoutRequestID,
+      mpesa_merchant_request_id: stkData.MerchantRequestID,
+      provider: "mpesa",
+      phone: normalizedPhone,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", typedPayment.id);
+
+  if (dbError) {
+    console.error("Failed to attach M-Pesa request IDs to payment:", dbError);
+  }
+
+  return json({
+    success: true,
+    paymentId: typedPayment.id,
+    bookingId: typedPayment.booking_id,
+    amountKes,
+    CheckoutRequestID: stkData.CheckoutRequestID,
+    MerchantRequestID: stkData.MerchantRequestID,
+    ResponseCode: stkData.ResponseCode,
+    ResponseDescription: stkData.ResponseDescription,
+    CustomerMessage: stkData.CustomerMessage,
+  });
+}
+
+/** Fire-and-forget payment confirmation email via the email Edge Function. */
+async function sendPaymentConfirmationEmail(supabase: AuthedClient, payment: PaymentRow): Promise<void> {
+  try {
+    const [{ data: user }, { data: booking }] = await Promise.all([
+      supabase
+        .from("users")
+        .select("first_name, last_name, email")
+        .eq("id", payment.user_id)
+        .single(),
+      supabase
+        .from("bookings")
+        .select("packages!bookings_package_id_fkey (name)")
+        .eq("id", payment.booking_id)
+        .single(),
+    ]);
+
+    if (!user?.email) {
+      console.error("No email found for payment user:", payment.user_id);
+      return;
+    }
+
+    await fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
+      },
+      body: JSON.stringify({
+        action: "payment-confirmation",
+        clientEmail: user.email,
+        clientName: `${user.first_name || ""} ${user.last_name || ""}`.trim() || "Customer",
+        amount: Number(payment.amount_usd),
+        method: "M-Pesa",
+        reference: payment.external_ref,
+        packageName: (booking as { packages?: { name?: string } } | null)?.packages?.name || "Safari package",
+      }),
+    });
+  } catch (error) {
+    // Email is non-critical; never fail the payment flow over it.
+    console.error("Failed to send payment confirmation email:", error);
+  }
+}
+
+/** Confirm the booking linked to a completed payment and email the client. */
+async function confirmBookingForPayment(
+  supabase: AuthedClient,
+  payment: PaymentRow
+): Promise<void> {
+  const { error } = await supabase
+    .from("bookings")
+    .update({ status: "confirmed", updated_at: new Date().toISOString() })
+    .eq("id", payment.booking_id)
+    .eq("status", "pending");
+
+  if (error) {
+    console.error("Failed to confirm booking:", error);
+  }
+
+  await sendPaymentConfirmationEmail(supabase, payment);
+}
+
+async function handleCallback(req: Request): Promise<Response> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return json({ ResultCode: 0, ResultDesc: "Invalid JSON body" }, 400);
+  }
+
+  const stkCallback = (body as { Body?: { stkCallback?: unknown } })?.Body?.stkCallback;
+  if (!stkCallback) {
+    return json({ ResultCode: 0, ResultDesc: "Invalid callback" }, 400);
+  }
+
+  const callback = stkCallback as {
+    MerchantRequestID: string;
+    CheckoutRequestID: string;
+    ResultCode: number;
+    ResultDesc: string;
+    CallbackMetadata?: { Item?: Array<{ Name: string; Value?: unknown }> };
+  };
+
+  const checkoutRequestId = callback.CheckoutRequestID;
+  const resultCode = callback.ResultCode;
+
+  // Look up the payment by the checkout request ID stored during STK push
+  const { data: payment, error: fetchError } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("mpesa_checkout_request_id", checkoutRequestId)
+    .single();
+
+  if (fetchError || !payment) {
+    console.error("Payment record not found for checkout request:", checkoutRequestId, fetchError);
+    return json({ ResultCode: 0, ResultDesc: "Payment record not found" }, 404);
+  }
+
+  const typedPayment = payment as PaymentRow;
+
   let status = "failed";
-  let mpesaReceipt = null;
-  let transactionDate = null;
+  let mpesaReceipt: string | null = null;
 
   if (resultCode === 0) {
     status = "completed";
-    const callbackMetadata = stkCallback.CallbackMetadata?.Item || [];
+    const callbackMetadata = callback.CallbackMetadata?.Item || [];
     for (const item of callbackMetadata) {
       if (item.Name === "MpesaReceiptNumber") {
-        mpesaReceipt = item.Value;
-      }
-      if (item.Name === "TransactionDate") {
-        transactionDate = item.Value;
+        mpesaReceipt = String(item.Value ?? "");
       }
     }
   } else if (resultCode === 1032) {
+    // User cancelled / dismissed the STK prompt
     status = "cancelled";
-  } else if (resultCode === 1) {
-    status = "failed";
   }
 
   const { error: updateError } = await supabase
     .from("payments")
     .update({
-      status: status,
-      result_code: resultCode,
-      result_desc: resultDesc,
+      status,
       mpesa_receipt_number: mpesaReceipt,
-      transaction_date: transactionDate,
-      callback_raw: body,
       updated_at: new Date().toISOString(),
     })
-    .eq("checkout_request_id", checkoutRequestId);
+    .eq("id", typedPayment.id);
 
   if (updateError) {
     console.error("Failed to update payment:", updateError);
   }
 
-  if (status === "completed" && payment.account_reference) {
-    const { error: bookingError } = await supabase
-      .from("bookings")
-      .update({
-        status: "confirmed",
-        payment_id: payment.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", payment.account_reference)
-      .eq("status", "pending");
-
-    if (bookingError) {
-      console.error("Failed to update booking:", bookingError);
-    }
+  if (status === "completed") {
+    await confirmBookingForPayment(supabase, typedPayment);
   }
 
-  return new Response(
-    JSON.stringify({ ResultCode: 0, ResultDesc: "Callback processed successfully" }),
-    {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    }
-  );
+  return json({ ResultCode: 0, ResultDesc: "Callback processed successfully" });
 }
 
-async function checkStatus(checkoutRequestId: string, authHeader: string | null): Promise<Response> {
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "Authentication required" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-  const token = authHeader.replace("Bearer ", "");
-  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-  if (authError || !user) {
-    return new Response(JSON.stringify({ error: "Invalid authentication" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+async function handleStatus(checkoutRequestId: string, req: Request): Promise<Response> {
+  const { supabase } = await authenticate(req);
 
   const { data: payment, error: fetchError } = await supabase
     .from("payments")
     .select("*")
-    .eq("checkout_request_id", checkoutRequestId)
+    .eq("mpesa_checkout_request_id", checkoutRequestId)
     .single();
 
   if (fetchError || !payment) {
-    return new Response(JSON.stringify({ error: "Payment not found" }), {
-      status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: "Payment not found" }, 404);
   }
 
-  if (payment.status === "pending") {
+  const typedPayment = payment as PaymentRow;
+
+  if (typedPayment.status === "pending") {
     const mpesaToken = await getOAuthToken();
     const baseUrl = getBaseUrl();
     const shortcode = Deno.env.get("MPESA_SHORTCODE")!;
@@ -313,64 +496,47 @@ async function checkStatus(checkoutRequestId: string, authHeader: string | null)
     if (queryRes.ok) {
       const queryData = await queryRes.json();
 
-      let newStatus = payment.status;
-      if (queryData.ResponseCode === "0") {
+      let newStatus = typedPayment.status;
+      if (queryData.ResultCode === "0" || queryData.ResultCode === 0) {
         newStatus = "completed";
-      } else if (queryData.ResponseCode === "1032") {
+      } else if (queryData.ResultCode === "1032" || queryData.ResultCode === 1032) {
         newStatus = "cancelled";
-      } else if (queryData.ResultCode && queryData.ResultCode !== "") {
+      } else if (queryData.ResultCode !== undefined && queryData.ResultCode !== null && queryData.ResultCode !== "") {
         newStatus = "failed";
       }
 
-      if (newStatus !== payment.status) {
+      if (newStatus !== typedPayment.status) {
         const { error: updateError } = await supabase
           .from("payments")
           .update({
             status: newStatus,
-            result_code: parseInt(queryData.ResponseCode) || null,
-            result_desc: queryData.ResponseDescription || null,
+            mpesa_receipt_number: queryData.MpesaReceiptNumber || typedPayment.mpesa_receipt_number,
             updated_at: new Date().toISOString(),
           })
-          .eq("checkout_request_id", checkoutRequestId);
+          .eq("id", typedPayment.id);
 
         if (updateError) {
           console.error("Failed to update payment status:", updateError);
+        } else {
+          typedPayment.status = newStatus;
         }
 
-        if (newStatus === "completed" && payment.account_reference) {
-          await supabase
-            .from("bookings")
-            .update({
-              status: "confirmed",
-              payment_id: payment.id,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", payment.account_reference)
-            .eq("status", "pending");
+        if (newStatus === "completed") {
+          await confirmBookingForPayment(supabase, typedPayment);
         }
-
-        payment.status = newStatus;
       }
     }
   }
 
-  return new Response(
-    JSON.stringify({
-      checkout_request_id: payment.checkout_request_id,
-      status: payment.status,
-      amount: payment.amount,
-      phone_number: payment.phone_number,
-      mpesa_receipt_number: payment.mpesa_receipt_number,
-      result_code: payment.result_code,
-      result_desc: payment.result_desc,
-      created_at: payment.created_at,
-      updated_at: payment.updated_at,
-    }),
-    {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    }
-  );
+  return json({
+    paymentId: typedPayment.id,
+    bookingId: typedPayment.booking_id,
+    checkoutRequestId,
+    status: typedPayment.status,
+    amountUsd: Number(typedPayment.amount_usd),
+    phone: typedPayment.phone,
+    mpesaReceiptNumber: typedPayment.mpesa_receipt_number,
+  });
 }
 
 serve(async (req: Request): Promise<Response> => {
@@ -382,66 +548,20 @@ serve(async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    if (path === "/mpesa/stk-push" && req.method === "POST") {
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) {
-        return new Response(JSON.stringify({ error: "Authentication required" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+    // POST /mpesa — action-based routing (matches the client's PaymentForm)
+    if (path === "/mpesa" && req.method === "POST") {
+      let body: StkPushBody & { action?: string };
+      try {
+        body = await req.json();
+      } catch {
+        return json({ error: "Invalid JSON body" }, 400);
       }
 
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, serviceRoleKey);
-
-      const token = authHeader.replace("Bearer ", "");
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: "Invalid authentication" }), {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (body?.action === "stk-push") {
+        return await handleStkPush(req, body);
       }
 
-      const body = await req.json();
-      const { phone, amount, accountReference } = body;
-
-      if (!phone || !amount) {
-        return new Response(
-          JSON.stringify({ error: "Phone number and amount are required" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      const phoneRegex = /^(?:254|\+?254|0)?[17]\d{8}$/;
-      const normalizedPhone = normalizePhone(phone);
-      if (!phoneRegex.test(normalizedPhone)) {
-        return new Response(
-          JSON.stringify({ error: "Invalid phone number format" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      const numAmount = Number(amount);
-      if (isNaN(numAmount) || numAmount < 1 || numAmount > 150000) {
-        return new Response(
-          JSON.stringify({ error: "Amount must be between 1 and 150,000" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      return await initiateSTKPush(normalizedPhone, numAmount, accountReference || user.id);
+      return json({ error: `Unknown action: ${body?.action || "(none)"}` }, 400);
     }
 
     if (path === "/mpesa/callback" && req.method === "POST") {
@@ -451,31 +571,17 @@ serve(async (req: Request): Promise<Response> => {
     if (path.startsWith("/mpesa/status/") && req.method === "GET") {
       const checkoutRequestId = path.split("/mpesa/status/")[1];
       if (!checkoutRequestId) {
-        return new Response(
-          JSON.stringify({ error: "Checkout request ID is required" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
+        return json({ error: "Checkout request ID is required" }, 400);
       }
-
-      const authHeader = req.headers.get("Authorization");
-      return await checkStatus(checkoutRequestId, authHeader);
+      return await handleStatus(checkoutRequestId, req);
     }
 
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return json({ error: "Not found" }, 404);
   } catch (error) {
+    if (error instanceof HttpError) {
+      return json({ error: error.message }, error.status);
+    }
     console.error("M-Pesa function error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return json({ error: (error as Error)?.message || "Internal server error" }, 500);
   }
 });

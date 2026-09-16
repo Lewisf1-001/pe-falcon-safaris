@@ -116,11 +116,13 @@ export default function AdminUsersList() {
                   </span>
                 </td>
                 <td className="px-2 py-4 text-gray-600">
-                  {new Intl.DateTimeFormat("en-GB", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  }).format(new Date(admin.createdAt))}
+                  {admin.createdAt && !isNaN(Date.parse(admin.createdAt))
+                    ? new Intl.DateTimeFormat("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }).format(new Date(admin.createdAt))
+                    : "—"}
                 </td>
                 <td className="px-2 py-4 text-right">
                   {admin.status === "invited" && (

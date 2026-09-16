@@ -8,6 +8,64 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+/**
+ * Fire-and-forget payment confirmation email via the email Edge Function.
+ * Called with the service role so it works outside any user session.
+ */
+async function sendPaymentConfirmationEmail(
+  payment: {
+    booking_id: number;
+    user_id: number;
+    amount_usd: number | string;
+    method: string;
+    external_ref: string | null;
+  }
+) {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const adminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const [{ data: user }, { data: booking }] = await Promise.all([
+      adminClient
+        .from("users")
+        .select("first_name, last_name, email")
+        .eq("id", payment.user_id)
+        .single(),
+      adminClient
+        .from("bookings")
+        .select("packages!bookings_package_id_fkey (name)")
+        .eq("id", payment.booking_id)
+        .single(),
+    ]);
+
+    if (!user?.email) {
+      console.error("No email found for payment user:", payment.user_id);
+      return;
+    }
+
+    await fetch(`${supabaseUrl}/functions/v1/email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        action: "payment-confirmation",
+        clientEmail: user.email,
+        clientName: `${user.first_name || ""} ${user.last_name || ""}`.trim() || "Customer",
+        amount: Number(payment.amount_usd),
+        method: payment.method === "mobile_money" ? "M-Pesa" : "Card",
+        reference: payment.external_ref,
+        packageName: (booking as { packages?: { name?: string } } | null)?.packages?.name || "Safari package",
+      }),
+    });
+  } catch (error) {
+    // Email is non-critical; never fail the payment flow over it.
+    console.error("Failed to send payment confirmation email:", error);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -259,6 +317,8 @@ serve(async (req) => {
           .from("bookings")
           .update({ status: "confirmed", updated_at: new Date().toISOString() })
           .eq("id", bookingId);
+
+        await sendPaymentConfirmationEmail(payment);
       }
 
       return new Response(

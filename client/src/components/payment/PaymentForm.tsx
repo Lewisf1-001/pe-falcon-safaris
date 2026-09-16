@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCurrency } from "@/components/currency/CurrencyProvider";
@@ -43,6 +43,8 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [awaitingMpesa, setAwaitingMpesa] = useState(false);
+  const pollIdRef = useRef(0);
 
   useEffect(() => {
     async function checkAuth() {
@@ -105,6 +107,64 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  /**
+   * Poll the M-Pesa status endpoint until the payment settles or we time out.
+   * Runs in the background; pollIdRef lets the user cancel out of the panel.
+   */
+  async function pollMpesaStatus(checkoutRequestId: string, token: string) {
+    const pollId = ++pollIdRef.current;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    };
+
+    // Poll every 3s for up to ~90s while the user enters their PIN.
+    const maxAttempts = 30;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (pollId !== pollIdRef.current) return;
+
+      try {
+        const res = await fetch(
+          `${supabaseUrl}/functions/v1/mpesa/status/${checkoutRequestId}`,
+          { headers }
+        );
+        if (!res.ok) continue;
+
+        const data = await res.json().catch(() => null);
+        if (pollId !== pollIdRef.current) return;
+
+        if (data?.status === "completed") {
+          setAwaitingMpesa(false);
+          setSuccess("");
+          router.replace(`/bookings/${bookingId}`);
+          return;
+        }
+
+        if (data?.status === "failed" || data?.status === "cancelled") {
+          setAwaitingMpesa(false);
+          setError(
+            data.status === "cancelled"
+              ? "The M-Pesa request was cancelled or timed out. Please try again."
+              : "The M-Pesa payment failed. Please try again."
+          );
+          return;
+        }
+      } catch {
+        // Network hiccup — keep polling until the attempt budget runs out.
+      }
+    }
+
+    if (pollId === pollIdRef.current) {
+      setAwaitingMpesa(false);
+      setError(
+        "We haven't received a payment confirmation yet. If you completed the payment, check your bookings page in a minute — otherwise please try again."
+      );
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -114,128 +174,83 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
     try {
       const supabase = createClient();
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError("You must be logged in.");
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+      if (!session) {
+        setError("Your session has expired. Please log in again.");
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("users")
-        .select("id")
-        .eq("auth_id", user.id)
-        .single();
+      const authHeaders = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      };
 
-      if (!profile) {
-        setError("User profile not found.");
-        return;
-      }
-
-      if (!booking) {
-        setError("Booking not found.");
-        return;
-      }
-
-      // Cancel any pending payments
-      await supabase
-        .from("payments")
-        .update({ status: "cancelled", updated_at: new Date().toISOString() })
-        .eq("booking_id", bookingId)
-        .eq("status", "pending");
-
-      // Create payment
-      const externalRef = `PF-${Date.now().toString(36).toUpperCase()}-${Math.random()
-        .toString(36)
-        .slice(2, 8)
-        .toUpperCase()}`;
-
-      let cardLast4 = null;
-      let cardBrand = null;
-      let paymentStatus = "completed";
-
-      if (form.method === "card" && form.cardNumber) {
-        cardLast4 = form.cardNumber.replace(/\s+/g, "").slice(-4);
-        if (/^4/.test(form.cardNumber)) cardBrand = "Visa";
-        else if (/^5[1-5]/.test(form.cardNumber) || /^2[2-7]/.test(form.cardNumber)) cardBrand = "Mastercard";
-        else if (/^3[47]/.test(form.cardNumber)) cardBrand = "Amex";
-      }
-
-      if (form.method === "mobile_money") {
-        paymentStatus = "pending";
-      }
-
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("payments")
-        .insert({
-          booking_id: bookingId,
-          user_id: profile.id,
-          amount_usd: booking.totalPriceUsd,
+      // Create the payment via the Edge Function. It validates booking
+      // ownership/status against the database and confirms the booking
+      // server-side when the payment completes immediately (card).
+      const createRes = await fetch(`${supabaseUrl}/functions/v1/payments`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          bookingId,
           method: form.method,
           provider: form.method === "mobile_money" ? "mpesa" : null,
           phone: form.method === "mobile_money" ? form.phone.trim() : null,
-          card_last4: cardLast4,
-          card_brand: cardBrand,
-          cardholder_name: form.method === "card" ? form.cardholderName.trim() : null,
-          external_ref: externalRef,
-          status: paymentStatus,
-        })
-        .select()
-        .single();
+          cardholderName: form.method === "card" ? form.cardholderName.trim() : null,
+          cardNumber: form.method === "card" ? form.cardNumber.replace(/\s+/g, "") : null,
+        }),
+      });
 
-      if (paymentError) throw paymentError;
+      const createData = await createRes.json().catch(() => null);
 
-      // Update booking status if completed
-      if (paymentStatus === "completed") {
-        await supabase
-          .from("bookings")
-          .update({ status: "confirmed", updated_at: new Date().toISOString() })
-          .eq("id", bookingId);
+      if (!createRes.ok || !createData?.payment) {
+        throw new Error(createData?.error || "Payment failed. Please try again.");
       }
 
-      if (paymentStatus === "pending") {
-        // Initiate M-Pesa STK push via Edge Function
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-
-          const stkResponse = await fetch(`${supabaseUrl}/functions/v1/mpesa`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session?.access_token || ""}`,
-              apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            },
-            body: JSON.stringify({
-              action: "stk-push",
-              phone: form.phone.trim(),
-              amount: booking.totalPriceUsd,
-              accountReference: externalRef,
-              paymentId: paymentData?.id,
-            }),
-          });
-
-          const stkContentType = stkResponse.headers.get("content-type") || "";
-          const stkText = await stkResponse.text();
-
-          if (!stkResponse.ok || !stkContentType.includes("application/json")) {
-            setSuccess(
-              "Payment record created. M-Pesa prompt could not be sent. Please try again or contact support."
-            );
-          } else {
-            setSuccess(
-              "M-Pesa prompt sent. Enter your PIN on your phone to complete payment."
-            );
-          }
-        } catch {
-          setSuccess(
-            "Payment record created. M-Pesa prompt could not be sent. Please try again or contact support."
-          );
-        }
+      if (!createData.awaitingConfirmation) {
+        setSuccess("Payment successful. Your reservation is confirmed.");
+        router.replace(`/bookings/${bookingId}`);
         return;
       }
 
-      setSuccess("Payment successful. Your reservation is confirmed.");
-      router.replace(`/bookings/${bookingId}`);
+      // M-Pesa: initiate the STK push against the payment record just created
+      try {
+        const stkResponse = await fetch(`${supabaseUrl}/functions/v1/mpesa`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            action: "stk-push",
+            phone: form.phone.trim(),
+            amount: createData.payment.amountUsd,
+            paymentId: createData.payment.id,
+          }),
+        });
+
+        const stkContentType = stkResponse.headers.get("content-type") || "";
+
+        if (!stkResponse.ok || !stkContentType.includes("application/json")) {
+          setSuccess(
+            "Payment record created. M-Pesa prompt could not be sent. Please try again or contact support."
+          );
+        } else {
+          const stkData = await stkResponse.json().catch(() => null);
+          setSuccess(
+            "M-Pesa prompt sent. Enter your PIN on your phone to complete payment."
+          );
+          if (stkData?.CheckoutRequestID) {
+            setAwaitingMpesa(true);
+            void pollMpesaStatus(stkData.CheckoutRequestID, session.access_token);
+          }
+        }
+      } catch {
+        setSuccess(
+          "Payment record created. M-Pesa prompt could not be sent. Please try again or contact support."
+        );
+      }
+      return;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed.");
     } finally {
@@ -272,6 +287,32 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
         >
           View this booking
         </Link>
+      </div>
+    );
+  }
+
+  if (awaitingMpesa) {
+    return (
+      <div className="rounded-md border border-gold/30 bg-gold/10 px-6 py-10 text-center">
+        <div
+          className="mx-auto mb-4 h-10 w-10 animate-pulse rounded-full bg-forest/20"
+          aria-hidden="true"
+        />
+        <h2 className="text-lg font-semibold text-forest">Awaiting M-Pesa confirmation</h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-gray-600">
+          {success || "Enter your M-Pesa PIN on your phone to complete the payment."} This page
+          updates automatically once payment is received.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            pollIdRef.current += 1; // stop the background poll
+            setAwaitingMpesa(false);
+          }}
+          className="mt-6 text-sm font-medium text-forest underline hover:opacity-80"
+        >
+          Back to payment options
+        </button>
       </div>
     );
   }
