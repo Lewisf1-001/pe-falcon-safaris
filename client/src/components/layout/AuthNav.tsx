@@ -30,10 +30,10 @@ export default function AuthNav() {
     return (
       <div className="flex items-center gap-5">
         <Link
-          href="/profile"
+          href="/dashboard"
           className="hidden font-display text-[11px] font-medium uppercase tracking-[0.18em] text-white/55 transition-colors hover:text-white/90 sm:inline lg:text-xs"
         >
-          {user.firstName}
+          Dashboard
         </Link>
         <Link
           href="/bookings"

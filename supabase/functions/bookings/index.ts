@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
 };
 
 const VALID_BOOKING_STATUSES = [
@@ -280,6 +280,58 @@ serve(async (req) => {
         }),
         {
           status: 201,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // PATCH /bookings/:id/cancel - Customer cancellation
+    if (req.method === "PATCH" && pathParts.length === 3 && pathParts[2] === "cancel") {
+      const bookingId = parseInt(pathParts[1]);
+      if (isNaN(bookingId)) {
+        return jsonError("Invalid booking ID", 400);
+      }
+
+      // Fetch the booking and verify ownership
+      const { data: booking, error: fetchError } = await supabase
+        .from("bookings")
+        .select("id, status, user_id")
+        .eq("id", bookingId)
+        .eq("user_id", profile.id)
+        .single();
+
+      if (fetchError || !booking) {
+        return jsonError("Booking not found", 404);
+      }
+
+      // Only allow cancellation from non-terminal states
+      const TERMINAL = ["completed", "cancelled", "refunded"];
+      if (TERMINAL.includes(booking.status)) {
+        return jsonError(
+          `Cannot cancel a booking in '${booking.status}' status`,
+          400
+        );
+      }
+
+      // Only allow cancellation from specific pre-payment states
+      const CANCELLABLE = ["inquiry", "quote", "pending", "deposit_required"];
+      if (!CANCELLABLE.includes(booking.status)) {
+        return jsonError(
+          "Bookings with confirmed payments cannot be cancelled online. Please contact us.",
+          400
+        );
+      }
+
+      const { error: updateError } = await supabase
+        .from("bookings")
+        .update({ status: "cancelled", updated_at: new Date().toISOString() })
+        .eq("id", bookingId);
+
+      if (updateError) throw updateError;
+
+      return new Response(
+        JSON.stringify({ message: "Booking cancelled successfully" }),
+        {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
