@@ -139,9 +139,44 @@ serve(async (req) => {
       const body = await req.json();
       const { status } = body;
 
-      if (!["pending", "confirmed", "cancelled"].includes(status)) {
+      const VALID_STATUSES = [
+        "inquiry", "quote", "pending", "deposit_required", "partially_paid",
+        "confirmed", "upcoming", "in_progress", "completed",
+        "cancelled", "expired", "refunded",
+      ];
+
+      if (!VALID_STATUSES.includes(status)) {
         return new Response(
           JSON.stringify({ error: "Invalid status" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      // Fetch current booking to validate transition
+      const { data: current, error: fetchError } = await supabase
+        .from("bookings")
+        .select("status")
+        .eq("id", bookingId)
+        .single();
+
+      if (fetchError || !current) {
+        return new Response(
+          JSON.stringify({ error: "Booking not found" }),
+          {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      // Admin can transition from any non-terminal state to any valid state
+      const TERMINAL_STATUSES = ["completed", "cancelled", "refunded"];
+      if (TERMINAL_STATUSES.includes(current.status)) {
+        return new Response(
+          JSON.stringify({ error: `Cannot update booking in '${current.status}' status` }),
           {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -157,7 +192,7 @@ serve(async (req) => {
       if (error) throw error;
 
       return new Response(
-        JSON.stringify({ message: "Booking updated" }),
+        JSON.stringify({ message: "Booking updated", previousStatus: current.status, newStatus: status }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }

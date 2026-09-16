@@ -85,7 +85,11 @@ CREATE TABLE IF NOT EXISTS bookings (
   guests INTEGER NOT NULL CHECK (guests >= 1 AND guests <= 20),
   total_price_usd NUMERIC(18, 8) NOT NULL CHECK (total_price_usd >= 0),
   status VARCHAR(20) NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'confirmed', 'cancelled')),
+    CHECK (status IN (
+      'inquiry', 'quote', 'pending', 'deposit_required', 'partially_paid',
+      'confirmed', 'upcoming', 'in_progress', 'completed',
+      'cancelled', 'expired', 'refunded'
+    )),
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

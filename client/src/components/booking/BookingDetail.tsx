@@ -12,10 +12,19 @@ type BookingDetailProps = {
   bookingId: number;
 };
 
-const statusStyles = {
+const statusStyles: Record<string, string> = {
+  inquiry: "bg-blue-100 text-blue-700",
+  quote: "bg-purple-100 text-purple-700",
   pending: "bg-orange-100 text-orange-700",
+  deposit_required: "bg-yellow-100 text-yellow-700",
+  partially_paid: "bg-amber-100 text-amber-700",
   confirmed: "bg-green-100 text-green-700",
+  upcoming: "bg-teal-100 text-teal-700",
+  in_progress: "bg-indigo-100 text-indigo-700",
+  completed: "bg-emerald-100 text-emerald-700",
   cancelled: "bg-gray-100 text-gray-600",
+  expired: "bg-gray-100 text-gray-500",
+  refunded: "bg-red-100 text-red-700",
 };
 
 export default function BookingDetail({ bookingId }: BookingDetailProps) {
@@ -143,14 +152,36 @@ export default function BookingDetail({ bookingId }: BookingDetailProps) {
         )}
       </dl>
 
-      {booking.status === "confirmed" && (
+      {(booking.status === "confirmed" || booking.status === "upcoming" || booking.status === "in_progress") && (
         <p className="mt-6 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          Payment received. Your safari reservation is confirmed.
+          {booking.status === "in_progress"
+            ? "Your safari is currently in progress. Enjoy your adventure!"
+            : booking.status === "upcoming"
+              ? "Payment received. Your safari reservation is confirmed and approaching."
+              : "Payment received. Your safari reservation is confirmed."}
+        </p>
+      )}
+
+      {booking.status === "completed" && (
+        <p className="mt-6 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          Your safari has been completed. We hope you had an amazing experience!
+        </p>
+      )}
+
+      {booking.status === "expired" && (
+        <p className="mt-6 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+          This booking has expired. Please contact us to rebook.
+        </p>
+      )}
+
+      {booking.status === "refunded" && (
+        <p className="mt-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          This booking has been refunded. Please contact us if you have questions.
         </p>
       )}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        {booking.status === "pending" && (
+        {(booking.status === "pending" || booking.status === "deposit_required" || booking.status === "partially_paid") && (
           <Link
             href={`/bookings/${booking.id}/pay`}
             className="nav-cta rounded-none border-0 px-4 py-2 text-sm font-semibold text-forest transition-opacity hover:opacity-90"

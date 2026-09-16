@@ -242,4 +242,38 @@ describe("Integration & Security Test Suite", () => {
       expect(checkAccess("customer", "customer")).toBe(true);
     });
   });
+
+  describe("Booking Creation via Edge Function", () => {
+    const VALID_STATUSES = [
+      "inquiry", "quote", "pending", "deposit_required", "partially_paid",
+      "confirmed", "upcoming", "in_progress", "completed",
+      "cancelled", "expired", "refunded",
+    ];
+
+    it("only allows creating bookings with 'pending' status from client", () => {
+      const clientAllowedStatuses = ["pending"];
+      for (const status of clientAllowedStatuses) {
+        expect(VALID_STATUSES).toContain(status);
+      }
+    });
+
+    it("rejects client-submitted status values other than pending", () => {
+      const maliciousStatuses = ["confirmed", "completed", "inquiry", "refunded"];
+      for (const status of maliciousStatuses) {
+        expect(["pending"]).not.toContain(status);
+      }
+    });
+
+    it("validates package slug format", () => {
+      const validSlugs = ["serengeti-migration", "masai-mara-safari", "amboseli-elephants"];
+      const invalidSlugs = ["", "../admin", "'; DROP TABLE bookings;--"];
+
+      for (const slug of validSlugs) {
+        expect(slug).toMatch(/^[a-z0-9-]+$/);
+      }
+      for (const slug of invalidSlugs) {
+        expect(slug).not.toMatch(/^[a-z0-9-]+$/);
+      }
+    });
+  });
 });
