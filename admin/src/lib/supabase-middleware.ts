@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Routes that do NOT require authentication.
+const PUBLIC_ROUTES = ["/login", "/forgot-password", "/reset-password", "/accept-invite"];
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -29,7 +32,22 @@ export async function updateSession(request: NextRequest) {
       },
     });
 
-    await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const pathname = request.nextUrl.pathname;
+
+    // Determine if this is a public route (exact match or root).
+    const isPublic = pathname === "/" || PUBLIC_ROUTES.some(
+      (route) => pathname === route || pathname.startsWith(route + "/")
+    );
+
+    // All non-public routes require authentication.
+    if (!isPublic && !user) {
+      const loginUrl = new URL("/login", request.url);
+      return NextResponse.redirect(loginUrl);
+    }
   } catch {
     // Middleware must not crash — return the unmodified response
   }

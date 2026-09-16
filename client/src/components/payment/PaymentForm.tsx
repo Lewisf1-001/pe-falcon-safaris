@@ -17,21 +17,11 @@ type PaymentMethod = "mobile_money" | "card";
 type FormState = {
   method: PaymentMethod;
   phone: string;
-  cardholderName: string;
-  cardNumber: string;
-  expiryMonth: string;
-  expiryYear: string;
-  cvv: string;
 };
 
 const initialState: FormState = {
   method: "mobile_money",
   phone: "",
-  cardholderName: "",
-  cardNumber: "",
-  expiryMonth: "",
-  expiryYear: "",
-  cvv: "",
 };
 
 export default function PaymentForm({ bookingId }: PaymentFormProps) {
@@ -189,18 +179,16 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
       };
 
       // Create the payment via the Edge Function. It validates booking
-      // ownership/status against the database and confirms the booking
-      // server-side when the payment completes immediately (card).
+      // ownership/status against the database.
+      // Card payments are not supported — only M-Pesa mobile money.
       const createRes = await fetch(`${supabaseUrl}/functions/v1/payments`, {
         method: "POST",
         headers: authHeaders,
         body: JSON.stringify({
           bookingId,
-          method: form.method,
-          provider: form.method === "mobile_money" ? "mpesa" : null,
-          phone: form.method === "mobile_money" ? form.phone.trim() : null,
-          cardholderName: form.method === "card" ? form.cardholderName.trim() : null,
-          cardNumber: form.method === "card" ? form.cardNumber.replace(/\s+/g, "") : null,
+          method: "mobile_money",
+          provider: "mpesa",
+          phone: form.phone.trim(),
         }),
       });
 
@@ -317,7 +305,6 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
     );
   }
 
-  const currentYear = new Date().getFullYear();
   const amountLabel = format(booking.totalPriceUsd);
   const kesLabel = formatIn(booking.totalPriceUsd, "KES");
 
@@ -335,146 +322,23 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
         </p>
       </div>
 
-      <fieldset>
-        <legend className="mb-2 text-sm font-medium text-forest">Payment method</legend>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label
-            className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm ${
-              form.method === "mobile_money"
-                ? "border-forest bg-forest/5 text-forest"
-                : "border-gray-300 text-gray-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="method"
-              checked={form.method === "mobile_money"}
-              onChange={() => handleChange("method", "mobile_money")}
-            />
-            M-Pesa
-          </label>
-          <label
-            className={`flex cursor-pointer items-center gap-3 rounded-md border px-4 py-3 text-sm ${
-              form.method === "card"
-                ? "border-forest bg-forest/5 text-forest"
-                : "border-gray-300 text-gray-600"
-            }`}
-          >
-            <input
-              type="radio"
-              name="method"
-              checked={form.method === "card"}
-              onChange={() => handleChange("method", "card")}
-            />
-            Card
-          </label>
-        </div>
-      </fieldset>
-
-      {form.method === "mobile_money" ? (
-        <div>
-          <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-forest">
-            M-Pesa mobile number
-          </label>
-          <input
-            id="phone"
-            type="tel"
-            required
-            placeholder="e.g. 0712345678"
-            value={form.phone}
-            onChange={(e) => handleChange("phone", e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-          />
-          <p className="mt-1.5 text-xs text-gray-500">
-            You will receive an STK push on this phone to enter your M-Pesa PIN.
-          </p>
-        </div>
-      ) : (
-        <>
-          <div>
-            <label htmlFor="cardholderName" className="mb-1.5 block text-sm font-medium text-forest">
-              Name on card
-            </label>
-            <input
-              id="cardholderName"
-              type="text"
-              required
-              value={form.cardholderName}
-              onChange={(e) => handleChange("cardholderName", e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="cardNumber" className="mb-1.5 block text-sm font-medium text-forest">
-              Card number
-            </label>
-            <input
-              id="cardNumber"
-              type="text"
-              inputMode="numeric"
-              required
-              autoComplete="cc-number"
-              placeholder="•••• •••• •••• ••••"
-              value={form.cardNumber}
-              onChange={(e) => handleChange("cardNumber", e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-            />
-            <p className="mt-1.5 text-xs text-gray-500">
-              Card details are used to process payment only. Full card numbers are never stored.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label htmlFor="expiryMonth" className="mb-1.5 block text-sm font-medium text-forest">
-                Month
-              </label>
-              <input
-                id="expiryMonth"
-                type="number"
-                required
-                min={1}
-                max={12}
-                placeholder="MM"
-                value={form.expiryMonth}
-                onChange={(e) => handleChange("expiryMonth", e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-              />
-            </div>
-            <div>
-              <label htmlFor="expiryYear" className="mb-1.5 block text-sm font-medium text-forest">
-                Year
-              </label>
-              <input
-                id="expiryYear"
-                type="number"
-                required
-                min={currentYear}
-                placeholder="YYYY"
-                value={form.expiryYear}
-                onChange={(e) => handleChange("expiryYear", e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-              />
-            </div>
-            <div>
-              <label htmlFor="cvv" className="mb-1.5 block text-sm font-medium text-forest">
-                CVV
-              </label>
-              <input
-                id="cvv"
-                type="password"
-                required
-                autoComplete="cc-csc"
-                maxLength={4}
-                value={form.cvv}
-                onChange={(e) => handleChange("cvv", e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
-              />
-            </div>
-          </div>
-        </>
-      )}
+      <div>
+        <label htmlFor="phone" className="mb-1.5 block text-sm font-medium text-forest">
+          M-Pesa mobile number
+        </label>
+        <input
+          id="phone"
+          type="tel"
+          required
+          placeholder="e.g. 0712345678"
+          value={form.phone}
+          onChange={(e) => handleChange("phone", e.target.value)}
+          className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
+        />
+        <p className="mt-1.5 text-xs text-gray-500">
+          You will receive an STK push on this phone to enter your M-Pesa PIN.
+        </p>
+      </div>
 
       {error && (
         <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -493,11 +357,7 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
         disabled={isSubmitting}
         className="w-full nav-cta rounded-none border-0 px-5 py-3 text-sm font-semibold text-forest transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {isSubmitting
-          ? "Processing..."
-          : form.method === "mobile_money"
-            ? `Pay ${kesLabel} with M-Pesa`
-            : `Pay ${amountLabel}`}
+        {isSubmitting ? "Processing..." : `Pay ${kesLabel} with M-Pesa`}
       </button>
     </form>
   );

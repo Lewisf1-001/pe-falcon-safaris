@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -212,7 +213,7 @@ serve(async (req) => {
     // POST /payments - Create payment
     if (req.method === "POST" && pathParts.length === 1) {
       const body = await req.json();
-      const { bookingId, method, provider, phone, cardholderName, cardNumber, expiryMonth, expiryYear, cvv } = body;
+      const { bookingId, method, provider, phone } = body;
 
       // Validate input
       if (!bookingId || !method) {
@@ -225,10 +226,26 @@ serve(async (req) => {
         );
       }
 
+      // Only M-Pesa mobile money is supported. Card payments require a
+      // PCI-compliant payment processor (e.g. Stripe) which is not yet
+      // integrated. Reject card payments rather than marking them as
+      // completed without actual processing.
+      if (method !== "mobile_money") {
+        return new Response(
+          JSON.stringify({
+            error: "Card payments are not yet supported. Please use M-Pesa.",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
       // Get booking
       const { data: booking, error: bookingError } = await supabase
         .from("bookings")
-        .select("*")
+        .select("id, user_id, status, total_price_usd")
         .eq("id", bookingId)
         .eq("user_id", profile.id)
         .single();
@@ -263,33 +280,25 @@ serve(async (req) => {
         );
       }
 
-      // Cancel any pending payments
-      await supabase
+      // Cancel any stale pending payments for this booking using a
+      // service-role client. The user's RLS does not allow UPDATE on
+      // payments, so we use the admin client for this targeted cleanup.
+      const supabaseAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+
+      await supabaseAdmin
         .from("payments")
         .update({ status: "cancelled", updated_at: new Date().toISOString() })
         .eq("booking_id", bookingId)
         .eq("status", "pending");
 
-      // Create payment
+      // Create payment — mobile money only
       const externalRef = `PF-${Date.now().toString(36).toUpperCase()}-${Math.random()
         .toString(36)
         .slice(2, 8)
         .toUpperCase()}`;
-
-      let cardLast4 = null;
-      let cardBrand = null;
-      let paymentStatus = "completed";
-
-      if (method === "card" && cardNumber) {
-        cardLast4 = cardNumber.slice(-4);
-        if (/^4/.test(cardNumber)) cardBrand = "Visa";
-        else if (/^5[1-5]/.test(cardNumber) || /^2[2-7]/.test(cardNumber)) cardBrand = "Mastercard";
-        else if (/^3[47]/.test(cardNumber)) cardBrand = "Amex";
-      }
-
-      if (method === "mobile_money") {
-        paymentStatus = "pending";
-      }
 
       const { data: payment, error: paymentError } = await supabase
         .from("payments")
@@ -297,34 +306,21 @@ serve(async (req) => {
           booking_id: bookingId,
           user_id: profile.id,
           amount_usd: booking.total_price_usd,
-          method,
-          provider,
+          method: "mobile_money",
+          provider: provider || "mpesa",
           phone,
-          card_last4: cardLast4,
-          card_brand: cardBrand,
-          cardholder_name: cardholderName,
           external_ref: externalRef,
-          status: paymentStatus,
+          status: "pending",
         })
         .select()
         .single();
 
       if (paymentError) throw paymentError;
 
-      // Update booking status if completed
-      if (paymentStatus === "completed") {
-        await supabase
-          .from("bookings")
-          .update({ status: "confirmed", updated_at: new Date().toISOString() })
-          .eq("id", bookingId);
-
-        await sendPaymentConfirmationEmail(payment);
-      }
-
       return new Response(
         JSON.stringify({
-          message: paymentStatus === "completed" ? "Payment successful" : "Payment initiated",
-          awaitingConfirmation: paymentStatus === "pending",
+          message: "Payment initiated",
+          awaitingConfirmation: true,
           payment: {
             id: payment.id,
             bookingId: Number(payment.booking_id),
@@ -333,9 +329,6 @@ serve(async (req) => {
             method: payment.method,
             provider: payment.provider,
             phone: payment.phone,
-            cardLast4: payment.card_last4,
-            cardBrand: payment.card_brand,
-            cardholderName: payment.cardholder_name,
             externalRef: payment.external_ref,
             status: payment.status,
             createdAt: payment.created_at,

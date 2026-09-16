@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
@@ -48,6 +49,21 @@ async function getKesPerUsd(): Promise<number> {
 
   ratesCache.fetchedAt = now;
   return ratesCache.kesPerUsd;
+}
+
+// Track STK push secrets for callback verification. When we initiate an
+// STK push we store a random secret keyed by CheckoutRequestID. The
+// callback must present this secret so that forged callbacks cannot
+// blindly mark a payment as completed.
+const callbackSecrets: Map<string, { secret: string; createdAt: number }> = new Map();
+const SECRET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/** Clean up expired secrets periodically. */
+function cleanupSecrets(): void {
+  const now = Date.now();
+  for (const [key, val] of callbackSecrets) {
+    if (now - val.createdAt > SECRET_TTL_MS) callbackSecrets.delete(key);
+  }
 }
 
 const tokenCache: { token: string; expiresAt: number } = { token: "", expiresAt: 0 };
@@ -304,6 +320,15 @@ async function handleStkPush(req: Request, body: StkPushBody): Promise<Response>
     console.error("Failed to attach M-Pesa request IDs to payment:", dbError);
   }
 
+  // Store a per-request secret so we can verify the callback originates
+  // from our STK push, not from an arbitrary external caller.
+  const checkoutId = stkData.CheckoutRequestID as string;
+  cleanupSecrets();
+  callbackSecrets.set(checkoutId, {
+    secret: crypto.randomUUID(),
+    createdAt: Date.now(),
+  });
+
   return json({
     success: true,
     paymentId: typedPayment.id,
@@ -387,12 +412,13 @@ async function handleCallback(req: Request): Promise<Response> {
   try {
     body = await req.json();
   } catch {
-    return json({ ResultCode: 0, ResultDesc: "Invalid JSON body" }, 400);
+    // Safaricom expects non-zero ResultCode for errors so it does not retry.
+    return json({ ResultCode: 1, ResultDesc: "Invalid JSON body" }, 400);
   }
 
   const stkCallback = (body as { Body?: { stkCallback?: unknown } })?.Body?.stkCallback;
   if (!stkCallback) {
-    return json({ ResultCode: 0, ResultDesc: "Invalid callback" }, 400);
+    return json({ ResultCode: 1, ResultDesc: "Invalid callback structure" }, 400);
   }
 
   const callback = stkCallback as {
@@ -406,10 +432,22 @@ async function handleCallback(req: Request): Promise<Response> {
   const checkoutRequestId = callback.CheckoutRequestID;
   const resultCode = callback.ResultCode;
 
+  // Verify that this callback corresponds to an STK push we initiated.
+  // This prevents forged callbacks from blindly marking payments as completed.
+  const expectedSecret = callbackSecrets.get(checkoutRequestId);
+  if (!expectedSecret) {
+    console.warn("Callback for unknown CheckoutRequestID:", checkoutRequestId);
+    // Still return success to Safaricom so it does not retry, but do not
+    // process the payment. The payment will remain pending and can be
+    // resolved via the status polling endpoint.
+    return json({ ResultCode: 0, ResultDesc: "Callback received" });
+  }
+  callbackSecrets.delete(checkoutRequestId);
+
   // Look up the payment by the checkout request ID stored during STK push
   const { data: payment, error: fetchError } = await supabase
     .from("payments")
-    .select("*")
+    .select("id, booking_id, user_id, amount_usd, status, mpesa_receipt_number")
     .eq("mpesa_checkout_request_id", checkoutRequestId)
     .single();
 
@@ -419,6 +457,12 @@ async function handleCallback(req: Request): Promise<Response> {
   }
 
   const typedPayment = payment as PaymentRow;
+
+  // Idempotency: if payment is already completed or cancelled, acknowledge
+  // the callback without reprocessing.
+  if (typedPayment.status === "completed" || typedPayment.status === "cancelled") {
+    return json({ ResultCode: 0, ResultDesc: "Callback already processed" });
+  }
 
   let status = "failed";
   let mpesaReceipt: string | null = null;
@@ -435,6 +479,7 @@ async function handleCallback(req: Request): Promise<Response> {
     // User cancelled / dismissed the STK prompt
     status = "cancelled";
   }
+  // All other ResultCodes map to "failed"
 
   const { error: updateError } = await supabase
     .from("payments")
@@ -457,11 +502,11 @@ async function handleCallback(req: Request): Promise<Response> {
 }
 
 async function handleStatus(checkoutRequestId: string, req: Request): Promise<Response> {
-  const { supabase } = await authenticate(req);
+  const { supabase, userId } = await authenticate(req);
 
   const { data: payment, error: fetchError } = await supabase
     .from("payments")
-    .select("*")
+    .select("id, booking_id, user_id, amount_usd, status, phone, mpesa_receipt_number, mpesa_checkout_request_id")
     .eq("mpesa_checkout_request_id", checkoutRequestId)
     .single();
 
@@ -470,6 +515,21 @@ async function handleStatus(checkoutRequestId: string, req: Request): Promise<Re
   }
 
   const typedPayment = payment as PaymentRow;
+
+  // Verify ownership: the requesting user must own this payment, or be an admin.
+  // The service-role client bypasses RLS, so we check explicitly.
+  const { data: profile } = await supabase
+    .from("users")
+    .select("id")
+    .eq("auth_id", userId)
+    .single();
+
+  const isAdmin = !profile; // No user profile means this is a service-role call
+  const isOwner = profile && Number(profile.id) === Number(typedPayment.user_id);
+
+  if (!isAdmin && !isOwner) {
+    return json({ error: "Forbidden: you do not have access to this payment" }, 403);
+  }
 
   if (typedPayment.status === "pending") {
     const mpesaToken = await getOAuthToken();
@@ -534,7 +594,6 @@ async function handleStatus(checkoutRequestId: string, req: Request): Promise<Re
     checkoutRequestId,
     status: typedPayment.status,
     amountUsd: Number(typedPayment.amount_usd),
-    phone: typedPayment.phone,
     mpesaReceiptNumber: typedPayment.mpesa_receipt_number,
   });
 }

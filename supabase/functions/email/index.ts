@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -11,6 +12,43 @@ const corsHeaders = {
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("FROM_EMAIL") || "noreply@pefalconsafaris.com";
 const CLIENT_URL = Deno.env.get("CLIENT_URL") || "https://pefalconsafaris.com";
+
+// ============================================================
+// HTML escaping — prevents injection of user-controlled values
+// into email templates.
+// ============================================================
+function escapeHtml(str: unknown): string {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ============================================================
+// Simple in-memory rate limiter.
+// Limits each IP to at most `limit` requests within a `windowMs`
+// sliding window. Resets on Deno isolate restart (acceptable for
+// a single-tenant Edge Function).
+// ============================================================
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 10; // max 10 emails per minute per IP
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitStore.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX;
+}
 
 function bookingConfirmationHtml(data: {
   clientName: string;
@@ -31,13 +69,13 @@ function bookingConfirmationHtml(data: {
 .btn{display:inline-block;background:#1a3c2a;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px;font-weight:bold;margin-top:16px}</style></head>
 <body><div class="container"><div class="header"><h1>PE Falcon Safaris</h1></div>
 <div class="content"><h2>Booking Confirmed!</h2>
-<p>Dear ${data.clientName},</p>
+<p>Dear ${escapeHtml(data.clientName)},</p>
 <p>Your safari booking has been received. Here are your booking details:</p>
 <div class="highlight">
-<p><strong>Package:</strong> ${data.packageName}</p>
-<p><strong>Travel Date:</strong> ${data.travelDate}</p>
+<p><strong>Package:</strong> ${escapeHtml(data.packageName)}</p>
+<p><strong>Travel Date:</strong> ${escapeHtml(data.travelDate)}</p>
 <p><strong>Guests:</strong> ${data.guests}</p>
-<p><strong>Total:</strong> USD ${data.total.toFixed(2)}</p>
+<p><strong>Total:</strong> USD ${Number(data.total).toFixed(2)}</p>
 </div>
 <p>Our team will review your booking and send you a confirmation shortly.</p>
 <p>If you have any questions, please don't hesitate to contact us.</p>
@@ -64,12 +102,12 @@ function paymentConfirmationHtml(data: {
 .footer{background:#1a3c2a;padding:16px;text-align:center;color:#d4a843;font-size:12px}</style></head>
 <body><div class="container"><div class="header"><h1>PE Falcon Safaris</h1></div>
 <div class="content"><h2>Payment Received</h2>
-<p>Dear ${data.clientName},</p>
-<p>We have received your payment for <strong>${data.packageName}</strong>.</p>
+<p>Dear ${escapeHtml(data.clientName)},</p>
+<p>We have received your payment for <strong>${escapeHtml(data.packageName)}</strong>.</p>
 <div class="highlight">
-<p><strong>Amount:</strong> USD ${data.amount.toFixed(2)}</p>
-<p><strong>Method:</strong> ${data.method}</p>
-<p><strong>Reference:</strong> ${data.reference}</p>
+<p><strong>Amount:</strong> USD ${Number(data.amount).toFixed(2)}</p>
+<p><strong>Method:</strong> ${escapeHtml(data.method)}</p>
+<p><strong>Reference:</strong> ${escapeHtml(data.reference)}</p>
 </div>
 <p>Your booking is now confirmed. We look forward to welcoming you on your safari!</p>
 <p>Warm regards,<br><strong>PE Falcon Safaris Team</strong></p></div>
@@ -98,11 +136,11 @@ function adminNotificationHtml(data: {
 <div class="content"><h2>New Booking Alert</h2>
 <p>A new booking has been submitted and requires your attention.</p>
 <div class="highlight">
-<p><strong>Client:</strong> ${data.clientName} (${data.clientEmail})</p>
-<p><strong>Package:</strong> ${data.packageName}</p>
-<p><strong>Travel Date:</strong> ${data.travelDate}</p>
+<p><strong>Client:</strong> ${escapeHtml(data.clientName)} (${escapeHtml(data.clientEmail)})</p>
+<p><strong>Package:</strong> ${escapeHtml(data.packageName)}</p>
+<p><strong>Travel Date:</strong> ${escapeHtml(data.travelDate)}</p>
 <p><strong>Guests:</strong> ${data.guests}</p>
-<p><strong>Total:</strong> USD ${data.total.toFixed(2)}</p>
+<p><strong>Total:</strong> USD ${Number(data.total).toFixed(2)}</p>
 </div>
 <p>Please review this booking in the admin dashboard.</p></div>
 <div class="footer"><p>&copy; ${new Date().getFullYear()} PE Falcon Safaris. All rights reserved.</p></div>
@@ -170,6 +208,16 @@ serve(async (req) => {
       if (authError || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Rate limit external (user-initiated) requests to prevent abuse.
+      // Internal calls from other Edge Functions are exempt.
+      const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+      if (isRateLimited(clientIp)) {
+        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
+          status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

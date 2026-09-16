@@ -1,5 +1,6 @@
 -- PE Falcon Safaris - Supabase Schema
--- Run this in the Supabase SQL Editor
+-- Canonical schema representation — aligned with migrations 001-004.
+-- Run this in the Supabase SQL Editor for fresh environments.
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -20,12 +21,10 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
-CREATE INDEX IF NOT EXISTS idx_users_auth_id ON users (auth_id);
-
 -- ============================================================
 -- ADMINS TABLE
--- Admins use Supabase Auth with an "admin" metadata claim
+-- Admins use Supabase Auth with an "admin" metadata claim.
+-- role column added in migration 003.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS admins (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,6 +35,8 @@ CREATE TABLE IF NOT EXISTS admins (
     CHECK (status IN ('active', 'invited')),
   invite_token VARCHAR(255),
   invite_token_expires_at TIMESTAMPTZ,
+  role VARCHAR(20) NOT NULL DEFAULT 'admin'
+    CHECK (role IN ('admin', 'superadmin')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -144,40 +145,88 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_completed_per_booking
 -- ============================================================
 -- AUTO-UPDATE TIMESTAMPS TRIGGER
 -- ============================================================
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
 BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$;
 
 CREATE TRIGGER update_users_updated_at
   BEFORE UPDATE ON users
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_admins_updated_at
   BEFORE UPDATE ON admins
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_packages_updated_at
   BEFORE UPDATE ON packages
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_bookings_updated_at
   BEFORE UPDATE ON bookings
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 CREATE TRIGGER update_payments_updated_at
   BEFORE UPDATE ON payments
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- ============================================================
+-- ADMIN AUTHORIZATION FUNCTIONS (migrations 002, 003, 004)
+-- ============================================================
+
+-- Check if a given auth user is an active admin.
+-- SECURITY DEFINER required: called from RLS policies that run in
+-- the querying user's role context but need to read the admins table.
+CREATE OR REPLACE FUNCTION public.is_active_admin(check_auth_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.admins
+    WHERE auth_id = check_auth_id AND status = 'active'
+  );
+$$;
+
+-- Return the role of an active admin (or NULL if not an admin).
+-- Used by superadmin-only RLS policies.
+CREATE OR REPLACE FUNCTION public.get_admin_role(check_auth_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT role FROM public.admins
+  WHERE auth_id = check_auth_id AND status = 'active'
+  LIMIT 1;
+$$;
 
 -- ============================================================
 -- AUTO-CREATE USER PROFILE ON SIGNUP
 -- ============================================================
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+-- Skips creating a user record if the auth user is already an admin.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
+  -- Skip creating a user record if this auth user is already an admin
+  IF EXISTS (SELECT 1 FROM public.admins WHERE auth_id = NEW.id) THEN
+    RETURN NEW;
+  END IF;
+
   INSERT INTO public.users (auth_id, first_name, last_name, email, email_verified)
   VALUES (
     NEW.id,
@@ -188,12 +237,19 @@ BEGIN
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Trigger to auto-create user profile
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Revoke public execute on SECURITY DEFINER functions (migration 004)
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO supabase_auth_admin;
+
+-- Grant execute on RLS helper functions (migration 003)
+GRANT EXECUTE ON FUNCTION public.get_admin_role(UUID) TO authenticated;
 
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
@@ -221,10 +277,14 @@ CREATE POLICY "Users can update own profile"
 CREATE POLICY "Admins can view all users"
   ON users FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
+  );
+
+-- Admins can update users
+CREATE POLICY "Admins can update users"
+  ON users FOR UPDATE
+  USING (
+    public.is_active_admin(auth.uid())
   );
 
 -- ADMINS POLICIES
@@ -232,20 +292,14 @@ CREATE POLICY "Admins can view all users"
 CREATE POLICY "Admins can view admins"
   ON admins FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
--- Admins can manage other admins (invite, update)
-CREATE POLICY "Admins can manage admins"
+-- Superadmins can manage other admins (invite, update, delete)
+CREATE POLICY "Superadmins can manage admins"
   ON admins FOR ALL
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.get_admin_role(auth.uid()) = 'superadmin'
   );
 
 -- PACKAGES POLICIES
@@ -258,20 +312,14 @@ CREATE POLICY "Public can view active packages"
 CREATE POLICY "Admins can view all packages"
   ON packages FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- Admins can manage packages
 CREATE POLICY "Admins can manage packages"
   ON packages FOR ALL
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- BOOKINGS POLICIES
@@ -297,20 +345,14 @@ CREATE POLICY "Users can create bookings"
 CREATE POLICY "Admins can view all bookings"
   ON bookings FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- Admins can manage bookings
 CREATE POLICY "Admins can manage bookings"
   ON bookings FOR ALL
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- PAYMENTS POLICIES
@@ -336,20 +378,14 @@ CREATE POLICY "Users can create payments"
 CREATE POLICY "Admins can view all payments"
   ON payments FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- Admins can manage payments
 CREATE POLICY "Admins can manage payments"
   ON payments FOR ALL
   USING (
-    EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    public.is_active_admin(auth.uid())
   );
 
 -- ============================================================

@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -104,7 +105,7 @@ serve(async (req) => {
       // Get package
       const { data: pkg, error: pkgError } = await supabase
         .from("packages")
-        .select("*")
+        .select("id, name, slug, starting_price_usd")
         .eq("slug", packageSlug)
         .eq("is_active", true)
         .single();
@@ -119,9 +120,9 @@ serve(async (req) => {
         );
       }
 
-      // Calculate price
-      const unitPrice = Number(pkg.starting_price);
-      const totalPriceUsd = unitPrice * guests;
+      // Calculate price using the canonical USD price field
+      const unitPriceUsd = Number(pkg.starting_price_usd);
+      const totalPriceUsd = unitPriceUsd * guests;
 
       // Create booking
       const { data: booking, error: bookingError } = await supabase
