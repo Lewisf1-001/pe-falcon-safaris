@@ -12,6 +12,7 @@ const navItems = [
   { label: "Clients", href: "/clients" },
   { label: "Bookings", href: "/bookings" },
   { label: "Quotations", href: "/quotations" },
+  { label: "Destinations", href: "/destinations" },
   { label: "Packages", href: "/packages" },
   { label: "Payments", href: "/payments" },
 ];

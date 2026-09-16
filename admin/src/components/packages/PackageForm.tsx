@@ -13,6 +13,7 @@ import {
   slugifyName,
 } from "@/types/package";
 import PackageGalleryUploader from "@/components/packages/PackageGalleryUploader";
+import DestinationSelector from "@/components/packages/DestinationSelector";
 
 type PackageFormProps = {
   editingPackage: SafariPackage | null;
@@ -26,6 +27,7 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedDestinationIds, setSelectedDestinationIds] = useState<number[]>([]);
   const previousCurrency = useRef<CurrencyCode>(currency);
 
   useEffect(() => {
@@ -37,8 +39,19 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
         rates
       );
       setForm(packageToFormState(editingPackage, displayPrice));
+
+      // Load existing destination links for this package
+      const supabase = createClient();
+      supabase
+        .from("package_destinations")
+        .select("destination_id")
+        .eq("package_id", editingPackage.id)
+        .then(({ data }) => {
+          setSelectedDestinationIds((data || []).map((l) => l.destination_id));
+        });
     } else {
       setForm(emptyPackageFormState);
+      setSelectedDestinationIds([]);
     }
     setError("");
     setSuccess("");
@@ -152,12 +165,43 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
           setError(updateError.message);
           return;
         }
+
+        // Save destination links to junction table
+        const packageId = editingPackage!.id;
+        await supabase
+          .from("package_destinations")
+          .delete()
+          .eq("package_id", packageId);
+        if (selectedDestinationIds.length > 0) {
+          const links = selectedDestinationIds.map((destId) => ({
+            package_id: packageId,
+            destination_id: destId,
+          }));
+          await supabase
+            .from("package_destinations")
+            .upsert(links, { onConflict: "package_id,destination_id" });
+        }
       } else {
-        const { error: insertError } = await supabase.from("packages").insert(row);
+        const { data: inserted, error: insertError } = await supabase
+          .from("packages")
+          .insert(row)
+          .select("id")
+          .single();
 
         if (insertError) {
           setError(insertError.message);
           return;
+        }
+
+        // Save destination links to junction table
+        if (inserted && selectedDestinationIds.length > 0) {
+          const links = selectedDestinationIds.map((destId) => ({
+            package_id: inserted.id,
+            destination_id: destId,
+          }));
+          await supabase
+            .from("package_destinations")
+            .upsert(links, { onConflict: "package_id,destination_id" });
         }
       }
 
@@ -294,6 +338,11 @@ export default function PackageForm({ editingPackage, onSaved, onCancelEdit }: P
             />
           </div>
         </div>
+
+        <DestinationSelector
+          selectedDestinationIds={selectedDestinationIds}
+          onChange={setSelectedDestinationIds}
+        />
 
         <PackageGalleryUploader
           images={form.galleryImages}
