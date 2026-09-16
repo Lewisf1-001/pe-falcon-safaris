@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const quickLinks = [
   { label: "Destinations", href: "/destinations" },
+  { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
   { label: "Book Now", href: "/#book" },
   { label: "About Us", href: "/#about" },

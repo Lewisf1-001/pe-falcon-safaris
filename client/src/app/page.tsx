@@ -1,5 +1,6 @@
 import AboutUs from "@/components/home/AboutUs";
 import FeaturedDestinations from "@/components/home/FeaturedDestinations";
+import FeaturedWildlife from "@/components/home/FeaturedWildlife";
 import SafariPackages from "@/components/home/SafariPackages";
 import Hero from "@/components/home/Hero";
 import UpcomingTours from "@/components/home/UpcomingTours";
@@ -17,6 +18,7 @@ export default async function HomePage() {
       <main>
         <Hero />
         <FeaturedDestinations />
+        <FeaturedWildlife />
         <SafariPackages packages={packages} />
         <AboutUs />
         <WhyChooseUs />

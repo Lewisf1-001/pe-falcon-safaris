@@ -7,6 +7,7 @@ import AuthNav from "@/components/layout/AuthNav";
 const navLinks = [
   { label: "Home", href: "/" },
   { label: "Destinations", href: "/destinations" },
+  { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
   { label: "About", href: "/#about" },
   { label: "Contact", href: "/#book" },
