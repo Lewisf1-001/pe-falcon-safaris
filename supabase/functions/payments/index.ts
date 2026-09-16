@@ -242,6 +242,21 @@ serve(async (req) => {
         );
       }
 
+      // Validate phone number format (Kenyan M-Pesa numbers)
+      if (phone) {
+        const cleaned = phone.replace(/[^0-9]/g, "");
+        const phoneRegex = /^(?:254|\+?254|0)?[17]\d{8}$/;
+        if (!phoneRegex.test(cleaned) && !phoneRegex.test("254" + cleaned.replace(/^0/, ""))) {
+          return new Response(
+            JSON.stringify({ error: "Invalid phone number format" }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+      }
+
       // Get booking
       const { data: booking, error: bookingError } = await supabase
         .from("bookings")
@@ -270,15 +285,18 @@ serve(async (req) => {
         );
       }
 
-      if (booking.status === "confirmed") {
+      if (booking.status === "confirmed" || booking.status === "completed" || booking.status === "upcoming" || booking.status === "in_progress") {
         return new Response(
-          JSON.stringify({ error: "This booking is already paid" }),
+          JSON.stringify({ error: "This booking is already paid or in progress" }),
           {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           }
         );
       }
+
+      // Allow payment for bookings in: pending, deposit_required, partially_paid, quote, inquiry
+      // These are the statuses where payment is expected or requested
 
       // Cancel any stale pending payments for this booking using a
       // service-role client. The user's RLS does not allow UPDATE on
@@ -347,8 +365,9 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error("Payments function error:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

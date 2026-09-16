@@ -201,15 +201,10 @@ type StkPushBody = {
 
 async function handleStkPush(req: Request, body: StkPushBody): Promise<Response> {
   const { supabase, userId } = await authenticate(req);
-  const { phone, amount, paymentId } = body;
+  const { phone, paymentId } = body;
 
-  if (!phone || !amount || !paymentId) {
-    return json({ error: "Phone number, amount, and paymentId are required" }, 400);
-  }
-
-  const numAmountUsd = Number(amount);
-  if (isNaN(numAmountUsd) || numAmountUsd <= 0) {
-    return json({ error: "Invalid amount" }, 400);
+  if (!phone || !paymentId) {
+    return json({ error: "Phone number and paymentId are required" }, 400);
   }
 
   const normalizedPhone = normalizePhone(phone);
@@ -245,6 +240,14 @@ async function handleStkPush(req: Request, body: StkPushBody): Promise<Response>
 
   if (!profile || Number(profile.id) !== Number(typedPayment.user_id)) {
     return json({ error: "Payment does not belong to the authenticated user" }, 403);
+  }
+
+  // SERVER-AUTHORITATIVE: Use the amount from the payment record, NOT from
+  // the client-supplied body. The payment record amount was set from the
+  // booking's total_price_usd by the payments Edge Function.
+  const numAmountUsd = Number(typedPayment.amount_usd);
+  if (!Number.isFinite(numAmountUsd) || numAmountUsd <= 0) {
+    return json({ error: "Invalid payment amount" }, 400);
   }
 
   const amountKes = await usdToKes(numAmountUsd);
@@ -524,7 +527,15 @@ async function handleStatus(checkoutRequestId: string, req: Request): Promise<Re
     .eq("auth_id", userId)
     .single();
 
-  const isAdmin = !profile; // No user profile means this is a service-role call
+  // Check admin status via the admins table, not by assuming missing profile = admin
+  const { data: adminRecord } = await supabase
+    .from("admins")
+    .select("id")
+    .eq("auth_id", userId)
+    .eq("status", "active")
+    .single();
+
+  const isAdmin = !!adminRecord;
   const isOwner = profile && Number(profile.id) === Number(typedPayment.user_id);
 
   if (!isAdmin && !isOwner) {

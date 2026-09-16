@@ -205,6 +205,7 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
       }
 
       // M-Pesa: initiate the STK push against the payment record just created
+      // Note: amount is NOT sent - the server uses the amount from the payment record
       try {
         const stkResponse = await fetch(`${supabaseUrl}/functions/v1/mpesa`, {
           method: "POST",
@@ -212,7 +213,6 @@ export default function PaymentForm({ bookingId }: PaymentFormProps) {
           body: JSON.stringify({
             action: "stk-push",
             phone: form.phone.trim(),
-            amount: createData.payment.amountUsd,
             paymentId: createData.payment.id,
           }),
         });
