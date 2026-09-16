@@ -9,6 +9,18 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
 };
 
+const BOOKING_STATUSES = [
+  "inquiry", "quote", "pending", "deposit_required", "partially_paid",
+  "confirmed", "upcoming", "in_progress", "completed",
+  "cancelled", "expired", "refunded",
+];
+
+const QUOTATION_STATUSES = [
+  "draft", "sent", "viewed", "accepted", "declined", "expired", "cancelled",
+];
+
+const PAYMENT_STATUSES = ["pending", "completed", "failed", "cancelled"];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -54,48 +66,287 @@ serve(async (req) => {
     const url = new URL(req.url);
     const pathParts = url.pathname.split("/").filter(Boolean);
 
-    // GET /admin/stats - Get dashboard stats
+    // GET /admin/stats - Get comprehensive dashboard stats
     if (req.method === "GET" && pathParts.length === 2 && pathParts[1] === "stats") {
-      const [
-        { count: totalBookings },
-        { count: pendingBookings },
-        { count: confirmedBookings },
-        { count: totalPayments },
-        { count: totalUsers },
-        { count: totalPackages },
-      ] = await Promise.all([
-        supabase.from("bookings").select("*", { count: "exact", head: true }),
-        supabase.from("bookings").select("*", { count: "exact", head: true }).eq("status", "pending"),
-        supabase.from("bookings").select("*", { count: "exact", head: true }).eq("status", "confirmed"),
-        supabase.from("payments").select("*", { count: "exact", head: true }).eq("status", "completed"),
-        supabase.from("users").select("*", { count: "exact", head: true }),
-        supabase.from("packages").select("*", { count: "exact", head: true }),
-      ]);
+      // Booking counts by status
+      const bookingCountPromises = BOOKING_STATUSES.map((status) =>
+        supabase.from("bookings").select("*", { count: "exact", head: true }).eq("status", status)
+      );
+      const { count: totalBookings } = await supabase
+        .from("bookings").select("*", { count: "exact", head: true });
+      const bookingStatusResults = await Promise.all(bookingCountPromises);
 
-      // Get total revenue
+      const bookingsByStatus: Record<string, number> = {};
+      BOOKING_STATUSES.forEach((status, i) => {
+        bookingsByStatus[status] = bookingStatusResults[i].count || 0;
+      });
+
+      // Quotation counts by status
+      const quotationCountPromises = QUOTATION_STATUSES.map((status) =>
+        supabase.from("quotations").select("*", { count: "exact", head: true }).eq("status", status)
+      );
+      const { count: totalQuotations } = await supabase
+        .from("quotations").select("*", { count: "exact", head: true });
+      const quotationStatusResults = await Promise.all(quotationCountPromises);
+
+      const quotationsByStatus: Record<string, number> = {};
+      QUOTATION_STATUSES.forEach((status, i) => {
+        quotationsByStatus[status] = quotationStatusResults[i].count || 0;
+      });
+
+      // Payment counts by status
+      const paymentCountPromises = PAYMENT_STATUSES.map((status) =>
+        supabase.from("payments").select("*", { count: "exact", head: true }).eq("status", status)
+      );
+      const paymentStatusResults = await Promise.all(paymentCountPromises);
+
+      const paymentsByStatus: Record<string, number> = {};
+      PAYMENT_STATUSES.forEach((status, i) => {
+        paymentsByStatus[status] = paymentStatusResults[i].count || 0;
+      });
+
+      // Total revenue from completed payments
       const { data: revenueData } = await supabase
         .from("payments")
         .select("amount_usd")
         .eq("status", "completed");
-
       const totalRevenue = revenueData?.reduce((sum, p) => sum + Number(p.amount_usd), 0) || 0;
+
+      // Quoted value from non-terminal quotations
+      const { data: quotedData } = await supabase
+        .from("quotations")
+        .select("total_usd")
+        .not("status", "in", "(accepted,declined,expired,cancelled)");
+      const totalQuotedValue = quotedData?.reduce((sum, q) => sum + Number(q.total_usd), 0) || 0;
+
+      // User and package counts
+      const [{ count: totalUsers }, { count: totalPackages }] = await Promise.all([
+        supabase.from("users").select("*", { count: "exact", head: true }),
+        supabase.from("packages").select("*", { count: "exact", head: true }),
+      ]);
 
       return new Response(
         JSON.stringify({
           stats: {
             totalBookings: totalBookings || 0,
-            pendingBookings: pendingBookings || 0,
-            confirmedBookings: confirmedBookings || 0,
-            totalPayments: totalPayments || 0,
+            bookingsByStatus,
+            totalQuotations: totalQuotations || 0,
+            quotationsByStatus,
+            totalPayments: (paymentsByStatus.pending || 0) + (paymentsByStatus.completed || 0) + (paymentsByStatus.failed || 0) + (paymentsByStatus.cancelled || 0),
+            paymentsByStatus,
             totalUsers: totalUsers || 0,
             totalPackages: totalPackages || 0,
             totalRevenue,
+            totalQuotedValue,
           },
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
+    }
+
+    // GET /admin/activity - Recent activity across bookings, payments, quotations
+    if (req.method === "GET" && pathParts.length === 2 && pathParts[1] === "activity") {
+      const limit = parseInt(url.searchParams.get("limit") || "10");
+      const safeLimit = Math.min(Math.max(limit, 1), 50);
+
+      const [
+        { data: recentBookings },
+        { data: recentPayments },
+        { data: recentQuotations },
+      ] = await Promise.all([
+        supabase
+          .from("bookings")
+          .select("id, status, total_price_usd, created_at, updated_at, user_id, package_id")
+          .order("created_at", { ascending: false })
+          .limit(safeLimit),
+        supabase
+          .from("payments")
+          .select("id, status, amount_usd, method, created_at, booking_id, user_id")
+          .order("created_at", { ascending: false })
+          .limit(safeLimit),
+        supabase
+          .from("quotations")
+          .select("id, title, status, total_usd, created_at, user_id, package_id")
+          .order("created_at", { ascending: false })
+          .limit(safeLimit),
+      ]);
+
+      // Fetch package names for all referenced packages
+      const packageIds = new Set<number>();
+      [...(recentBookings || []), ...(recentQuotations || [])].forEach((item) => {
+        if (item.package_id) packageIds.add(item.package_id);
+      });
+
+      let packagesByName: Record<number, string> = {};
+      if (packageIds.size > 0) {
+        const { data: packages } = await supabase
+          .from("packages")
+          .select("id, name")
+          .in("id", Array.from(packageIds));
+        packages?.forEach((p) => { packagesByName[p.id] = p.name; });
+      }
+
+      // Fetch user names for all referenced users
+      const userIds = new Set<number>();
+      [...(recentBookings || []), ...(recentPayments || []), ...(recentQuotations || [])].forEach((item) => {
+        if (item.user_id) userIds.add(item.user_id);
+      });
+
+      let usersById: Record<number, { name: string; email: string }> = {};
+      if (userIds.size > 0) {
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, first_name, last_name, email")
+          .in("id", Array.from(userIds));
+        users?.forEach((u) => {
+          usersById[u.id] = {
+            name: `${u.first_name} ${u.last_name}`.trim(),
+            email: u.email,
+          };
+        });
+      }
+
+      // Combine into unified activity feed
+      type ActivityItem = {
+        type: "booking" | "payment" | "quotation";
+        id: number;
+        title: string;
+        description: string;
+        status: string;
+        amountUsd: number | null;
+        timestamp: string;
+      };
+
+      const activities: ActivityItem[] = [];
+
+      (recentBookings || []).forEach((b) => {
+        const user = usersById[b.user_id];
+        const pkg = b.package_id ? packagesByName[b.package_id] : null;
+        activities.push({
+          type: "booking",
+          id: b.id,
+          title: pkg || `Booking #${b.id}`,
+          description: user ? `${user.name} — ${b.guests || "?"} guests` : `Booking #${b.id}`,
+          status: b.status,
+          amountUsd: Number(b.total_price_usd),
+          timestamp: b.created_at,
+        });
+      });
+
+      (recentPayments || []).forEach((p) => {
+        const user = usersById[p.user_id];
+        activities.push({
+          type: "payment",
+          id: p.id as unknown as number,
+          title: `Payment ${p.method === "mobile_money" ? "(M-Pesa)" : ""}`,
+          description: user ? `${user.name}` : `Payment`,
+          status: p.status,
+          amountUsd: Number(p.amount_usd),
+          timestamp: p.created_at,
+        });
+      });
+
+      (recentQuotations || []).forEach((q) => {
+        const user = usersById[q.user_id];
+        const pkg = q.package_id ? packagesByName[q.package_id] : null;
+        activities.push({
+          type: "quotation",
+          id: q.id,
+          title: q.title || pkg || `Quotation #${q.id}`,
+          description: user ? `${user.name}` : `Quotation #${q.id}`,
+          status: q.status,
+          amountUsd: Number(q.total_usd),
+          timestamp: q.created_at,
+        });
+      });
+
+      // Sort by timestamp descending and limit
+      activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const limited = activities.slice(0, safeLimit);
+
+      return new Response(JSON.stringify({ activity: limited }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // GET /admin/alerts - Operational alerts requiring admin attention
+    if (req.method === "GET" && pathParts.length === 2 && pathParts[1] === "alerts") {
+      // Bookings needing attention: inquiry, quote, pending, deposit_required
+      const alertBookingStatuses = ["inquiry", "quote", "pending", "deposit_required"];
+      const alertBookingPromises = alertBookingStatuses.map((status) =>
+        supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", status)
+      );
+      const alertBookingResults = await Promise.all(alertBookingPromises);
+
+      // Quotations awaiting response: sent, viewed
+      const alertQuotationStatuses = ["sent", "viewed"];
+      const alertQuotationPromises = alertQuotationStatuses.map((status) =>
+        supabase.from("quotations").select("id", { count: "exact", head: true }).eq("status", status)
+      );
+      const alertQuotationResults = await Promise.all(alertQuotationPromises);
+
+      // Pending payments
+      const { count: pendingPayments } = await supabase
+        .from("payments").select("id", { count: "exact", head: true }).eq("status", "pending");
+
+      // Expired quotations (status not terminal but valid_until passed)
+      const { count: expiredQuotations } = await supabase
+        .from("quotations")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["draft", "sent", "viewed"])
+        .lt("valid_until", new Date().toISOString().split("T")[0]);
+
+      const alerts = [];
+
+      const totalPendingBookings = alertBookingResults.reduce((sum, r) => sum + (r.count || 0), 0);
+      if (totalPendingBookings > 0) {
+        alerts.push({
+          type: "bookings_pending_action",
+          label: "Bookings awaiting action",
+          count: totalPendingBookings,
+          breakdown: Object.fromEntries(
+            alertBookingStatuses.map((status, i) => [status, alertBookingResults[i].count || 0])
+          ),
+          href: "/bookings",
+        });
+      }
+
+      const totalAwaitingQuotations = alertQuotationResults.reduce((sum, r) => sum + (r.count || 0), 0);
+      if (totalAwaitingQuotations > 0) {
+        alerts.push({
+          type: "quotations_awaiting_response",
+          label: "Quotations awaiting customer response",
+          count: totalAwaitingQuotations,
+          breakdown: Object.fromEntries(
+            alertQuotationStatuses.map((status, i) => [status, alertQuotationResults[i].count || 0])
+          ),
+          href: "/quotations",
+        });
+      }
+
+      if ((pendingPayments || 0) > 0) {
+        alerts.push({
+          type: "payments_pending",
+          label: "Payments pending verification",
+          count: pendingPayments,
+          href: "/payments",
+        });
+      }
+
+      if ((expiredQuotations || 0) > 0) {
+        alerts.push({
+          type: "quotations_expired",
+          label: "Quotations expired without response",
+          count: expiredQuotations,
+          href: "/quotations",
+        });
+      }
+
+      return new Response(JSON.stringify({ alerts }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // GET /admin/bookings - List all bookings
