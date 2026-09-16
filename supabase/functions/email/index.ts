@@ -147,6 +147,64 @@ function adminNotificationHtml(data: {
 </div></body></html>`;
 }
 
+function quotationSentHtml(data: {
+  clientName: string;
+  title: string;
+  totalUsd: number;
+  validUntil: string;
+}) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f4f4f4;margin:0;padding:0}
+.container{max-width:600px;margin:0 auto;background:#fff}
+.header{background:#1a3c2a;padding:24px;text-align:center}
+.header h1{color:#d4a843;margin:0;font-size:24px}
+.content{padding:32px 24px;color:#333}
+.highlight{background:#f0f7f0;border-left:4px solid #1a3c2a;padding:16px;margin:16px 0;border-radius:4px}
+.footer{background:#1a3c2a;padding:16px;text-align:center;color:#d4a843;font-size:12px}</style></head>
+<body><div class="container"><div class="header"><h1>PE Falcon Safaris</h1></div>
+<div class="content"><h2>Your Safari Quotation is Ready</h2>
+<p>Dear ${escapeHtml(data.clientName)},</p>
+<p>We have prepared a customized safari quotation for you.</p>
+<div class="highlight">
+<p><strong>Quotation:</strong> ${escapeHtml(data.title)}</p>
+<p><strong>Total:</strong> USD ${Number(data.totalUsd).toFixed(2)}</p>
+<p><strong>Valid until:</strong> ${escapeHtml(data.validUntil)}</p>
+</div>
+<p>Please log in to your dashboard to view the full details and respond to this quotation.</p>
+<p>Warm regards,<br><strong>PE Falcon Safaris Team</strong></p></div>
+<div class="footer"><p>&copy; ${new Date().getFullYear()} PE Falcon Safaris. All rights reserved.</p></div>
+</div></body></html>`;
+}
+
+function quotationAcceptedHtml(data: {
+  clientName: string;
+  title: string;
+  totalUsd: number;
+}) {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f4f4f4;margin:0;padding:0}
+.container{max-width:600px;margin:0 auto;background:#fff}
+.header{background:#1a3c2a;padding:24px;text-align:center}
+.header h1{color:#d4a843;margin:0;font-size:24px}
+.content{padding:32px 24px;color:#333}
+.highlight{background:#f0f7f0;border-left:4px solid #1a3c2a;padding:16px;margin:16px 0;border-radius:4px}
+.footer{background:#1a3c2a;padding:16px;text-align:center;color:#d4a843;font-size:12px}</style></head>
+<body><div class="container"><div class="header"><h1>PE Falcon Safaris</h1></div>
+<div class="content"><h2>Quotation Accepted!</h2>
+<p>A customer has accepted a quotation.</p>
+<div class="highlight">
+<p><strong>Client:</strong> ${escapeHtml(data.clientName)}</p>
+<p><strong>Quotation:</strong> ${escapeHtml(data.title)}</p>
+<p><strong>Total:</strong> USD ${Number(data.totalUsd).toFixed(2)}</p>
+</div>
+<p>Please follow up to arrange payment and confirm the booking.</p>
+<p>Warm regards,<br><strong>PE Falcon Safaris System</strong></p></div>
+<div class="footer"><p>&copy; ${new Date().getFullYear()} PE Falcon Safaris. All rights reserved.</p></div>
+</div></body></html>`;
+}
+
 async function sendEmail(to: string, subject: string, html: string) {
   if (!RESEND_API_KEY) {
     console.warn("RESEND_API_KEY not set. Email not sent.");
@@ -277,6 +335,108 @@ serve(async (req) => {
         );
 
         result = { success: results.every((r) => r.success), sent: results.length };
+        break;
+      }
+
+      case "quotation-sent": {
+        const { quotationId } = body;
+        if (!quotationId) {
+          return new Response(JSON.stringify({ error: "Missing quotationId" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Fetch quotation with user info
+        const { data: quotation } = await supabase
+          .from("quotations")
+          .select("title, total_usd, valid_until, user_id")
+          .eq("id", quotationId)
+          .single();
+
+        if (!quotation) {
+          return new Response(JSON.stringify({ error: "Quotation not found" }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: user } = await supabase
+          .from("users")
+          .select("first_name, last_name, email")
+          .eq("id", quotation.user_id)
+          .single();
+
+        if (!user?.email) {
+          return new Response(JSON.stringify({ message: "No customer email" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const clientName = `${user.first_name || ""} ${user.last_name || ""}`.trim() || "Customer";
+        const html = quotationSentHtml({
+          clientName,
+          title: quotation.title,
+          totalUsd: Number(quotation.total_usd),
+          validUntil: quotation.valid_until?.slice(0, 10) || "N/A",
+        });
+
+        result = await sendEmail(user.email, `Your Safari Quotation - ${quotation.title}`, html);
+        break;
+      }
+
+      case "quotation-accepted": {
+        const { quotationId: qId } = body;
+        if (!qId) {
+          return new Response(JSON.stringify({ error: "Missing quotationId" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: q } = await supabase
+          .from("quotations")
+          .select("title, total_usd, user_id")
+          .eq("id", qId)
+          .single();
+
+        if (!q) {
+          return new Response(JSON.stringify({ error: "Quotation not found" }), {
+            status: 404,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { data: qUser } = await supabase
+          .from("users")
+          .select("first_name, last_name")
+          .eq("id", q.user_id)
+          .single();
+
+        const clientName = qUser ? `${qUser.first_name || ""} ${qUser.last_name || ""}`.trim() || "Customer" : "Customer";
+
+        // Notify all active admins
+        const { data: adminList } = await supabase
+          .from("admins")
+          .select("email")
+          .eq("status", "active")
+          .not("email", "is", null);
+
+        if (adminList && adminList.length > 0) {
+          const html = quotationAcceptedHtml({
+            clientName,
+            title: q.title,
+            totalUsd: Number(q.total_usd),
+          });
+
+          const results = await Promise.all(
+            adminList.map((a) => sendEmail(a.email, `Quotation Accepted - ${q.title}`, html))
+          );
+
+          result = { success: results.every((r) => r.success), sent: results.length };
+        } else {
+          result = { success: true, sent: 0 };
+        }
         break;
       }
 

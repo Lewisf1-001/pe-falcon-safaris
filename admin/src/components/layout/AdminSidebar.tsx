@@ -11,6 +11,7 @@ const navItems = [
   { label: "Admin Users", href: "/admin-users" },
   { label: "Clients", href: "/clients" },
   { label: "Bookings", href: "/bookings" },
+  { label: "Quotations", href: "/quotations" },
   { label: "Packages", href: "/packages" },
   { label: "Payments", href: "/payments" },
 ];

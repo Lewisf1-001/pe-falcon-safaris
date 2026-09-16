@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import { getUser, AuthUser } from "@/lib/auth";
 import DashboardBookings from "@/components/dashboard/DashboardBookings";
+import DashboardQuotations from "@/components/dashboard/DashboardQuotations";
 import PaymentHistory from "@/components/dashboard/PaymentHistory";
 
 export default function DashboardPage() {
@@ -78,6 +79,8 @@ export default function DashboardPage() {
             </section>
 
             <DashboardBookings />
+
+            <DashboardQuotations />
 
             <PaymentHistory />
           </div>

@@ -147,6 +147,72 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_one_completed_per_booking
   WHERE status = 'completed';
 
 -- ============================================================
+-- QUOTATIONS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS quotations (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  booking_id INTEGER REFERENCES bookings(id) ON DELETE SET NULL,
+  package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  travel_date DATE NOT NULL,
+  guests INTEGER NOT NULL CHECK (guests >= 1 AND guests <= 20),
+  currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+  subtotal_usd NUMERIC(18, 8) NOT NULL CHECK (subtotal_usd >= 0),
+  discount_usd NUMERIC(18, 8) NOT NULL DEFAULT 0 CHECK (discount_usd >= 0),
+  tax_usd NUMERIC(18, 8) NOT NULL DEFAULT 0 CHECK (tax_usd >= 0),
+  total_usd NUMERIC(18, 8) NOT NULL CHECK (total_usd >= 0),
+  valid_until DATE NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'sent', 'viewed', 'accepted', 'declined', 'expired', 'cancelled')),
+  notes_customer TEXT,
+  notes_admin TEXT,
+  sent_at TIMESTAMPTZ,
+  viewed_at TIMESTAMPTZ,
+  accepted_at TIMESTAMPTZ,
+  declined_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotations_user_id
+  ON quotations (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quotations_status
+  ON quotations (status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_quotations_booking_id
+  ON quotations (booking_id)
+  WHERE booking_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_quotations_valid_until
+  ON quotations (valid_until)
+  WHERE status IN ('draft', 'sent', 'viewed');
+
+-- ============================================================
+-- QUOTATION ITEMS TABLE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id SERIAL PRIMARY KEY,
+  quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  description VARCHAR(500) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+  unit_price_usd NUMERIC(18, 8) NOT NULL CHECK (unit_price_usd >= 0),
+  amount_usd NUMERIC(18, 8) NOT NULL CHECK (amount_usd >= 0),
+  category VARCHAR(50) NOT NULL DEFAULT 'other'
+    CHECK (category IN (
+      'accommodation', 'transport', 'park_fees', 'activities',
+      'meals', 'guide', 'other', 'discount'
+    )),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation_id
+  ON quotation_items (quotation_id, sort_order);
+
+-- ============================================================
 -- AUTO-UPDATE TIMESTAMPS TRIGGER
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
@@ -180,6 +246,69 @@ CREATE TRIGGER update_bookings_updated_at
 CREATE TRIGGER update_payments_updated_at
   BEFORE UPDATE ON payments
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+CREATE TRIGGER update_quotations_updated_at
+  BEFORE UPDATE ON quotations
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- QUOTATION ITEM AMOUNT AUTO-CALCULATION
+CREATE OR REPLACE FUNCTION public.calculate_quotation_item_amount()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.amount_usd = NEW.quantity * NEW.unit_price_usd;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER quotation_item_amount_calc
+  BEFORE INSERT OR UPDATE ON public.quotation_items
+  FOR EACH ROW
+  EXECUTE FUNCTION public.calculate_quotation_item_amount();
+
+-- QUOTATION TOTALS AUTO-CALCULATION
+CREATE OR REPLACE FUNCTION public.calculate_quotation_totals()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  v_subtotal NUMERIC(18, 8);
+  v_discount NUMERIC(18, 8);
+  v_quotation_id INTEGER;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    v_quotation_id := OLD.quotation_id;
+  ELSE
+    v_quotation_id := NEW.quotation_id;
+  END IF;
+
+  SELECT
+    COALESCE(SUM(CASE WHEN category != 'discount' THEN amount_usd ELSE 0 END), 0),
+    COALESCE(SUM(CASE WHEN category = 'discount' THEN ABS(amount_usd) ELSE 0 END), 0)
+  INTO v_subtotal, v_discount
+  FROM public.quotation_items
+  WHERE quotation_id = v_quotation_id;
+
+  UPDATE public.quotations
+  SET subtotal_usd = v_subtotal,
+      discount_usd = v_discount,
+      total_usd = v_subtotal - v_discount + tax_usd,
+      updated_at = NOW()
+  WHERE id = v_quotation_id;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER quotation_totals_recalculate
+  AFTER INSERT OR UPDATE OR DELETE ON public.quotation_items
+  FOR EACH ROW
+  EXECUTE FUNCTION public.calculate_quotation_totals();
 
 -- ============================================================
 -- ADMIN AUTHORIZATION FUNCTIONS (migrations 002, 003, 004)
@@ -388,6 +517,60 @@ CREATE POLICY "Admins can view all payments"
 -- Admins can manage payments
 CREATE POLICY "Admins can manage payments"
   ON payments FOR ALL
+  USING (
+    public.is_active_admin(auth.uid())
+  );
+
+-- QUOTATIONS POLICIES
+-- Enable RLS
+ALTER TABLE quotations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quotation_items ENABLE ROW LEVEL SECURITY;
+
+-- Users can view their own quotations
+CREATE POLICY "Users can view own quotations"
+  ON quotations FOR SELECT
+  USING (
+    user_id IN (
+      SELECT id FROM users WHERE auth_id = auth.uid()
+    )
+  );
+
+-- Users can view items of their own quotations
+CREATE POLICY "Users can view own quotation items"
+  ON quotation_items FOR SELECT
+  USING (
+    quotation_id IN (
+      SELECT id FROM quotations
+      WHERE user_id IN (
+        SELECT id FROM users WHERE auth_id = auth.uid()
+      )
+    )
+  );
+
+-- Admins can view all quotations
+CREATE POLICY "Admins can view all quotations"
+  ON quotations FOR SELECT
+  USING (
+    public.is_active_admin(auth.uid())
+  );
+
+-- Admins can view all quotation items
+CREATE POLICY "Admins can view all quotation items"
+  ON quotation_items FOR SELECT
+  USING (
+    public.is_active_admin(auth.uid())
+  );
+
+-- Admins can manage quotations
+CREATE POLICY "Admins can manage quotations"
+  ON quotations FOR ALL
+  USING (
+    public.is_active_admin(auth.uid())
+  );
+
+-- Admins can manage quotation items
+CREATE POLICY "Admins can manage quotation items"
+  ON quotation_items FOR ALL
   USING (
     public.is_active_admin(auth.uid())
   );
