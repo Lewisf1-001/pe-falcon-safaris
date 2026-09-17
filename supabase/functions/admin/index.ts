@@ -450,6 +450,168 @@ serve(async (req) => {
       );
     }
 
+    // GET /admin/reviews - List all reviews (admin)
+    if (req.method === "GET" && pathParts.length === 2 && pathParts[1] === "reviews") {
+      const statusFilter = url.searchParams.get("status");
+
+      let query = supabase
+        .from("reviews")
+        .select(`
+          *,
+          users!reviews_user_id_fkey (first_name, last_name, email),
+          packages!reviews_package_id_fkey (name, slug),
+          bookings!reviews_booking_id_fkey (travel_date, guests)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (statusFilter && ["pending", "approved", "rejected", "hidden"].includes(statusFilter)) {
+        query = query.eq("status", statusFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      const reviews = data.map((r) => ({
+        id: Number(r.id),
+        userId: Number(r.user_id),
+        bookingId: Number(r.booking_id),
+        packageId: r.package_id ? Number(r.package_id) : null,
+        packageName: r.packages?.name || null,
+        packageSlug: r.packages?.slug || null,
+        reviewerName: `${r.users?.first_name || ""} ${r.users?.last_name || ""}`.trim() || "Anonymous",
+        reviewerEmail: r.users?.email || null,
+        travelDate: r.bookings?.travel_date?.slice(0, 10) || null,
+        rating: r.rating,
+        title: r.title,
+        body: r.body,
+        status: r.status,
+        adminResponse: r.admin_response,
+        adminResponseAt: r.admin_response_at,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        publishedAt: r.published_at,
+      }));
+
+      return new Response(JSON.stringify({ reviews }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // GET /admin/reviews/stats - Review statistics
+    if (req.method === "GET" && pathParts.length === 3 && pathParts[1] === "reviews" && pathParts[2] === "stats") {
+      const { count: totalReviews } = await supabase
+        .from("reviews").select("*", { count: "exact", head: true });
+
+      const { count: pendingReviews } = await supabase
+        .from("reviews").select("*", { count: "exact", head: true }).eq("status", "pending");
+
+      const { count: approvedReviews } = await supabase
+        .from("reviews").select("*", { count: "exact", head: true }).eq("status", "approved");
+
+      const { count: rejectedReviews } = await supabase
+        .from("reviews").select("*", { count: "exact", head: true }).eq("status", "rejected");
+
+      // Average rating of approved reviews
+      const { data: avgData } = await supabase
+        .from("reviews")
+        .select("rating")
+        .eq("status", "approved");
+
+      const avgRating = avgData && avgData.length > 0
+        ? avgData.reduce((sum, r) => sum + r.rating, 0) / avgData.length
+        : 0;
+
+      return new Response(JSON.stringify({
+        stats: {
+          totalReviews: totalReviews || 0,
+          pendingReviews: pendingReviews || 0,
+          approvedReviews: approvedReviews || 0,
+          rejectedReviews: rejectedReviews || 0,
+          averageRating: Math.round(avgRating * 10) / 10,
+        },
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // PATCH /admin/reviews/:id - Update review status or admin response
+    if (req.method === "PATCH" && pathParts.length === 3 && pathParts[1] === "reviews") {
+      const reviewId = parseInt(pathParts[2]);
+      if (isNaN(reviewId)) {
+        return new Response(JSON.stringify({ error: "Invalid review ID" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const MAX_PAYLOAD = 8192;
+      const rawBody = await req.text();
+      if (rawBody.length > MAX_PAYLOAD) {
+        return new Response(JSON.stringify({ error: "Payload too large" }), {
+          status: 413,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { status, adminResponse } = body;
+      const updateData: Record<string, unknown> = {};
+
+      if (status !== undefined) {
+        if (!["pending", "approved", "rejected", "hidden"].includes(status as string)) {
+          return new Response(JSON.stringify({ error: "Invalid status" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        updateData.status = status;
+        if (status === "approved") {
+          updateData.published_at = new Date().toISOString();
+        }
+      }
+
+      if (adminResponse !== undefined) {
+        if (typeof adminResponse !== "string" || adminResponse.length > 2000) {
+          return new Response(JSON.stringify({ error: "Admin response must be under 2000 characters" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        updateData.admin_response = adminResponse.trim() || null;
+        updateData.admin_response_at = new Date().toISOString();
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return new Response(JSON.stringify({ error: "No valid fields to update" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: review, error } = await supabase
+        .from("reviews")
+        .update(updateData)
+        .eq("id", reviewId)
+        .select("id, status")
+        .single();
+
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ review }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Not found" }), {
       status: 404,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

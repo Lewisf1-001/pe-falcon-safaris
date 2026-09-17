@@ -16,6 +16,7 @@ const navItems = [
   { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
   { label: "Payments", href: "/payments" },
+  { label: "Reviews", href: "/reviews" },
 ];
 
 export default function AdminSidebar() {
