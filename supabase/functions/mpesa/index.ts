@@ -404,6 +404,29 @@ async function confirmBookingForPayment(
   }
 
   await sendPaymentConfirmationEmail(supabase, payment);
+
+  // Fire-and-forget in-app notification (non-blocking)
+  try {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/notifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: Deno.env.get("SUPABASE_ANON_KEY")!,
+      },
+      body: JSON.stringify({
+        userId: payment.user_id,
+        type: "payment_received",
+        title: "Payment Received",
+        message: `Your payment of USD ${Number(payment.amount_usd).toFixed(2)} has been received.`,
+        referenceType: "booking",
+        referenceId: payment.booking_id,
+      }),
+    }).catch(() => {});
+  } catch {
+    // Notifications are non-critical
+  }
 }
 
 async function handleCallback(req: Request): Promise<Response> {

@@ -260,6 +260,29 @@ serve(async (req) => {
         // Email is non-critical
       }
 
+      // Fire-and-forget in-app notification (non-blocking)
+      try {
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        fetch(`${supabaseUrl}/functions/v1/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: supabaseKey,
+          },
+          body: JSON.stringify({
+            userId: profile.id,
+            type: "booking_received",
+            title: "Booking Received",
+            message: `Your safari booking for ${pkg.name} has been received. We'll review the details and update you shortly.`,
+            referenceType: "booking",
+            referenceId: Number(booking.id),
+          }),
+        }).catch(() => {});
+      } catch {
+        // Notifications are non-critical
+      }
+
       return new Response(
         JSON.stringify({
           message: "Booking created successfully",
@@ -328,6 +351,29 @@ serve(async (req) => {
         .eq("id", bookingId);
 
       if (updateError) throw updateError;
+
+      // Fire-and-forget in-app notification (non-blocking)
+      try {
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        fetch(`${supabaseUrl}/functions/v1/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: supabaseKey,
+          },
+          body: JSON.stringify({
+            userId: profile.id,
+            type: "booking_cancelled",
+            title: "Booking Cancelled",
+            message: "Your booking has been cancelled successfully.",
+            referenceType: "booking",
+            referenceId: bookingId,
+          }),
+        }).catch(() => {});
+      } catch {
+        // Notifications are non-critical
+      }
 
       return new Response(
         JSON.stringify({ message: "Booking cancelled successfully" }),

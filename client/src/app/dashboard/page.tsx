@@ -8,6 +8,7 @@ import { getUser, AuthUser } from "@/lib/auth";
 import DashboardBookings from "@/components/dashboard/DashboardBookings";
 import DashboardQuotations from "@/components/dashboard/DashboardQuotations";
 import DashboardReviews from "@/components/dashboard/DashboardReviews";
+import DashboardNotifications from "@/components/dashboard/DashboardNotifications";
 import PaymentHistory from "@/components/dashboard/PaymentHistory";
 
 export default function DashboardPage() {
@@ -78,6 +79,8 @@ export default function DashboardPage() {
                 </Link>
               </div>
             </section>
+
+            <DashboardNotifications user={user} />
 
             <DashboardBookings />
 
