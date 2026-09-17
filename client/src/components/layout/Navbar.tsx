@@ -11,6 +11,7 @@ const navLinks = [
   { label: "Trip Builder", href: "/trip-builder" },
   { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
+  { label: "Assistant", href: "/assistant" },
   { label: "About", href: "/#about" },
   { label: "Contact", href: "/#book" },
 ];

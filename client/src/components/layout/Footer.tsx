@@ -6,6 +6,7 @@ const quickLinks = [
   { label: "Trip Builder", href: "/trip-builder" },
   { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
+  { label: "Safari Assistant", href: "/assistant" },
   { label: "Book Now", href: "/#book" },
   { label: "About Us", href: "/#about" },
 ];
