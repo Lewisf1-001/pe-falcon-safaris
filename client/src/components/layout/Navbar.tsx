@@ -8,6 +8,7 @@ const navLinks = [
   { label: "Home", href: "/" },
   { label: "Destinations", href: "/destinations" },
   { label: "Safari Map", href: "/map" },
+  { label: "Trip Builder", href: "/trip-builder" },
   { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
   { label: "About", href: "/#about" },
