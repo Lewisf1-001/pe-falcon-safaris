@@ -28,6 +28,8 @@ function mapRowToDestination(row: any): Destination {
     featured: row.featured,
     heroImage: row.hero_image,
     galleryImages: row.gallery_images || [],
+    latitude: row.latitude != null ? Number(row.latitude) : null,
+    longitude: row.longitude != null ? Number(row.longitude) : null,
     seoTitle: row.seo_title,
     seoDescription: row.seo_description,
     sortOrder: row.sort_order,

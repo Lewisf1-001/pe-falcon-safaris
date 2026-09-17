@@ -17,6 +17,8 @@ export type Destination = {
   featured: boolean;
   heroImage: string | null;
   galleryImages: DestinationGalleryImage[];
+  latitude: number | null;
+  longitude: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
   sortOrder: number;
@@ -36,6 +38,8 @@ export type DestinationFormState = {
   featured: boolean;
   heroImage: string;
   galleryImages: DestinationGalleryImage[];
+  latitude: string;
+  longitude: string;
   seoTitle: string;
   seoDescription: string;
   sortOrder: string;
@@ -52,6 +56,8 @@ export const emptyDestinationFormState: DestinationFormState = {
   featured: false,
   heroImage: "",
   galleryImages: [],
+  latitude: "",
+  longitude: "",
   seoTitle: "",
   seoDescription: "",
   sortOrder: "0",
@@ -69,6 +75,8 @@ export function destinationToFormState(dest: Destination): DestinationFormState 
     featured: dest.featured,
     heroImage: dest.heroImage ?? "",
     galleryImages: dest.galleryImages ?? [],
+    latitude: dest.latitude != null ? String(dest.latitude) : "",
+    longitude: dest.longitude != null ? String(dest.longitude) : "",
     seoTitle: dest.seoTitle ?? "",
     seoDescription: dest.seoDescription ?? "",
     sortOrder: String(dest.sortOrder),

@@ -14,6 +14,8 @@ export type DestinationSummary = {
   shortDescription: string | null;
   featured: boolean;
   heroImage: string | null;
+  latitude: number | null;
+  longitude: number | null;
   sortOrder: number;
   createdAt: string;
 };
@@ -49,7 +51,7 @@ export async function fetchPublishedDestinations(): Promise<DestinationSummary[]
     const supabase = getPublicClient();
     const { data, error } = await supabase
       .from("destinations")
-      .select("id, name, slug, country, region, short_description, featured, hero_image, sort_order, created_at")
+      .select("id, name, slug, country, region, short_description, featured, hero_image, latitude, longitude, sort_order, created_at")
       .eq("status", "published")
       .order("sort_order", { ascending: true })
       .order("name", { ascending: true });
@@ -65,6 +67,8 @@ export async function fetchPublishedDestinations(): Promise<DestinationSummary[]
       shortDescription: d.short_description,
       featured: d.featured,
       heroImage: d.hero_image,
+      latitude: d.latitude != null ? Number(d.latitude) : null,
+      longitude: d.longitude != null ? Number(d.longitude) : null,
       sortOrder: d.sort_order,
       createdAt: d.created_at,
     }));
@@ -78,7 +82,7 @@ export async function fetchFeaturedDestinations(): Promise<DestinationSummary[]>
     const supabase = getPublicClient();
     const { data, error } = await supabase
       .from("destinations")
-      .select("id, name, slug, country, region, short_description, featured, hero_image, sort_order")
+      .select("id, name, slug, country, region, short_description, featured, hero_image, latitude, longitude, sort_order")
       .eq("status", "published")
       .eq("featured", true)
       .order("sort_order", { ascending: true });
@@ -94,6 +98,8 @@ export async function fetchFeaturedDestinations(): Promise<DestinationSummary[]>
       shortDescription: d.short_description,
       featured: d.featured,
       heroImage: d.hero_image,
+      latitude: d.latitude != null ? Number(d.latitude) : null,
+      longitude: d.longitude != null ? Number(d.longitude) : null,
       sortOrder: d.sort_order,
       createdAt: "",
     }));
@@ -153,6 +159,8 @@ export async function fetchDestinationBySlug(slug: string): Promise<DestinationD
       description: destination.description,
       featured: destination.featured,
       heroImage: destination.hero_image,
+      latitude: destination.latitude != null ? Number(destination.latitude) : null,
+      longitude: destination.longitude != null ? Number(destination.longitude) : null,
       galleryImages: destination.gallery_images || [],
       seoTitle: destination.seo_title,
       seoDescription: destination.seo_description,

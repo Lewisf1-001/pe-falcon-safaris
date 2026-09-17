@@ -44,7 +44,7 @@ serve(async (req) => {
     if (req.method === "GET" && pathParts.length === 1 && pathParts[0] === "destinations") {
       const { data, error } = await supabase
         .from("destinations")
-        .select("id, name, slug, country, region, short_description, featured, hero_image, sort_order, created_at")
+        .select("id, name, slug, country, region, short_description, featured, hero_image, latitude, longitude, sort_order, created_at")
         .eq("status", "published")
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
@@ -60,7 +60,7 @@ serve(async (req) => {
     if (req.method === "GET" && pathParts.length === 2 && pathParts[1] === "featured") {
       const { data, error } = await supabase
         .from("destinations")
-        .select("id, name, slug, country, region, short_description, featured, hero_image, sort_order")
+        .select("id, name, slug, country, region, short_description, featured, hero_image, latitude, longitude, sort_order")
         .eq("status", "published")
         .eq("featured", true)
         .order("sort_order", { ascending: true });
@@ -208,7 +208,8 @@ serve(async (req) => {
       const body = await req.json();
       const {
         name, slug: rawSlug, country, region, shortDescription, description,
-        status, featured, heroImage, galleryImages, seoTitle, seoDescription, sortOrder,
+        status, featured, heroImage, galleryImages, latitude, longitude,
+        seoTitle, seoDescription, sortOrder,
       } = body;
 
       if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -243,6 +244,24 @@ serve(async (req) => {
         );
       }
 
+      if (latitude !== undefined && latitude !== null) {
+        if (typeof latitude !== "number" || latitude < -90 || latitude > 90) {
+          return new Response(
+            JSON.stringify({ error: "Latitude must be a number between -90 and 90" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
+      if (longitude !== undefined && longitude !== null) {
+        if (typeof longitude !== "number" || longitude < -180 || longitude > 180) {
+          return new Response(
+            JSON.stringify({ error: "Longitude must be a number between -180 and 180" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
       // Check slug uniqueness
       const { data: existing } = await supabase
         .from("destinations")
@@ -268,6 +287,8 @@ serve(async (req) => {
         featured: Boolean(featured),
         hero_image: heroImage?.trim() || null,
         gallery_images: Array.isArray(galleryImages) ? galleryImages : [],
+        latitude: typeof latitude === "number" ? latitude : null,
+        longitude: typeof longitude === "number" ? longitude : null,
         seo_title: seoTitle?.trim() || null,
         seo_description: seoDescription?.trim() || null,
         sort_order: typeof sortOrder === "number" ? sortOrder : 0,
@@ -380,6 +401,24 @@ serve(async (req) => {
       if (body.featured !== undefined) updates.featured = Boolean(body.featured);
       if (body.heroImage !== undefined) updates.hero_image = body.heroImage?.trim() || null;
       if (body.galleryImages !== undefined) updates.gallery_images = Array.isArray(body.galleryImages) ? body.galleryImages : [];
+      if (body.latitude !== undefined) {
+        if (body.latitude !== null && (typeof body.latitude !== "number" || body.latitude < -90 || body.latitude > 90)) {
+          return new Response(
+            JSON.stringify({ error: "Latitude must be a number between -90 and 90" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        updates.latitude = body.latitude;
+      }
+      if (body.longitude !== undefined) {
+        if (body.longitude !== null && (typeof body.longitude !== "number" || body.longitude < -180 || body.longitude > 180)) {
+          return new Response(
+            JSON.stringify({ error: "Longitude must be a number between -180 and 180" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        updates.longitude = body.longitude;
+      }
       if (body.seoTitle !== undefined) updates.seo_title = body.seoTitle?.trim() || null;
       if (body.seoDescription !== undefined) updates.seo_description = body.seoDescription?.trim() || null;
       if (body.sortOrder !== undefined) updates.sort_order = typeof body.sortOrder === "number" ? body.sortOrder : 0;

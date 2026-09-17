@@ -16,6 +16,8 @@ type Destination = {
   featured: boolean;
   heroImage: string | null;
   galleryImages: { url: string; alt: string }[];
+  latitude: number | null;
+  longitude: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
   sortOrder: number;
@@ -35,6 +37,8 @@ type DestinationFormState = {
   featured: boolean;
   heroImage: string;
   galleryImages: { url: string; alt: string }[];
+  latitude: string;
+  longitude: string;
   seoTitle: string;
   seoDescription: string;
   sortOrder: string;
@@ -51,6 +55,8 @@ const emptyDestinationFormState: DestinationFormState = {
   featured: false,
   heroImage: "",
   galleryImages: [],
+  latitude: "",
+  longitude: "",
   seoTitle: "",
   seoDescription: "",
   sortOrder: "0",
@@ -68,6 +74,8 @@ function destinationToFormState(dest: Destination): DestinationFormState {
     featured: dest.featured,
     heroImage: dest.heroImage ?? "",
     galleryImages: dest.galleryImages ?? [],
+    latitude: dest.latitude != null ? String(dest.latitude) : "",
+    longitude: dest.longitude != null ? String(dest.longitude) : "",
     seoTitle: dest.seoTitle ?? "",
     seoDescription: dest.seoDescription ?? "",
     sortOrder: String(dest.sortOrder),
@@ -91,6 +99,8 @@ type DestinationSummary = {
   shortDescription: string | null;
   featured: boolean;
   heroImage: string | null;
+  latitude: number | null;
+  longitude: number | null;
   sortOrder: number;
   createdAt: string;
 };
@@ -141,6 +151,8 @@ describe("Phase 7: Destination CMS", () => {
         featured: false,
         heroImage: null,
         galleryImages: [],
+        latitude: null,
+        longitude: null,
         seoTitle: null,
         seoDescription: null,
         sortOrder: 0,
@@ -163,6 +175,8 @@ describe("Phase 7: Destination CMS", () => {
         featured: false,
         heroImage: null,
         galleryImages: [],
+        latitude: null,
+        longitude: null,
         seoTitle: null,
         seoDescription: null,
         sortOrder: 0,
@@ -240,6 +254,8 @@ describe("Phase 7: Destination CMS", () => {
         featured: true,
         heroImage: "https://example.com/hero.jpg",
         galleryImages: [{ url: "https://example.com/g1.jpg", alt: "Image 1" }],
+        latitude: null,
+        longitude: null,
         seoTitle: "Maasai Mara Safari",
         seoDescription: "Explore Maasai Mara",
         sortOrder: 1,
@@ -271,6 +287,8 @@ describe("Phase 7: Destination CMS", () => {
         featured: false,
         heroImage: null,
         galleryImages: [],
+        latitude: null,
+        longitude: null,
         seoTitle: null,
         seoDescription: null,
         sortOrder: 0,
@@ -303,6 +321,8 @@ describe("Phase 7: Destination CMS", () => {
         featured: true,
         heroImage: "hero.jpg",
         galleryImages: [],
+        latitude: null,
+        longitude: null,
         seoTitle: "Title",
         seoDescription: "Desc",
         sortOrder: 1,
@@ -326,6 +346,8 @@ describe("Phase 7: Destination CMS", () => {
         shortDescription: "Famous reserve",
         featured: true,
         heroImage: "hero.jpg",
+        latitude: null,
+        longitude: null,
         sortOrder: 1,
         createdAt: "2026-01-01",
       };
@@ -345,6 +367,8 @@ describe("Phase 7: Destination CMS", () => {
         shortDescription: "Famous reserve",
         featured: true,
         heroImage: "hero.jpg",
+        latitude: null,
+        longitude: null,
         sortOrder: 1,
         createdAt: "2026-01-01",
         description: "Long text",
@@ -527,6 +551,8 @@ describe("Phase 7: Destination CMS", () => {
           shortDescription: "Famous reserve",
           featured: true,
           heroImage: null,
+          latitude: null,
+          longitude: null,
           sortOrder: 1,
           createdAt: "",
         },
@@ -539,6 +565,8 @@ describe("Phase 7: Destination CMS", () => {
           shortDescription: "Capital city",
           featured: false,
           heroImage: null,
+          latitude: null,
+          longitude: null,
           sortOrder: 2,
           createdAt: "",
         },
@@ -566,6 +594,8 @@ describe("Phase 7: Destination CMS", () => {
           shortDescription: null,
           featured: false,
           heroImage: null,
+          latitude: null,
+          longitude: null,
           sortOrder: 2,
           createdAt: "",
         },
@@ -578,6 +608,8 @@ describe("Phase 7: Destination CMS", () => {
           shortDescription: null,
           featured: false,
           heroImage: null,
+          latitude: null,
+          longitude: null,
           sortOrder: 1,
           createdAt: "",
         },
@@ -606,6 +638,8 @@ describe("Phase 7: Destination CMS", () => {
         shortDescription: "Famous reserve",
         featured: true,
         heroImage: "hero.jpg",
+        latitude: null,
+        longitude: null,
         sortOrder: 1,
         createdAt: "",
         description: "Full description",
@@ -651,6 +685,8 @@ describe("Phase 7: Destination CMS", () => {
         shortDescription: null,
         featured: false,
         heroImage: null,
+        latitude: null,
+        longitude: null,
         sortOrder: 0,
         createdAt: "",
         description: null,
@@ -682,6 +718,8 @@ describe("Phase 7: Destination CMS", () => {
         shortDescription: "Famous reserve",
         featured: true,
         heroImage: null,
+        latitude: null,
+        longitude: null,
         sortOrder: 1,
         createdAt: "",
         description: null,
@@ -780,6 +818,251 @@ describe("Phase 7: Destination CMS", () => {
       for (const col of rlsColumns) {
         expect(rlsColumns).toContain(col);
       }
+    });
+  });
+
+  describe("Geographic Coordinates", () => {
+    describe("Coordinate Types", () => {
+      it("Destination type includes latitude and longitude", () => {
+        const dest: Destination = {
+          id: 1,
+          name: "Test",
+          slug: "test",
+          country: null,
+          region: null,
+          shortDescription: null,
+          description: null,
+          status: "published",
+          featured: false,
+          heroImage: null,
+          galleryImages: [],
+          latitude: -1.4061,
+          longitude: 36.9661,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        expect(dest.latitude).toBe(-1.4061);
+        expect(dest.longitude).toBe(36.9661);
+      });
+
+      it("Destination allows null latitude and longitude", () => {
+        const dest: Destination = {
+          id: 1,
+          name: "Test",
+          slug: "test",
+          country: null,
+          region: null,
+          shortDescription: null,
+          description: null,
+          status: "published",
+          featured: false,
+          heroImage: null,
+          galleryImages: [],
+          latitude: null,
+          longitude: null,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        expect(dest.latitude).toBeNull();
+        expect(dest.longitude).toBeNull();
+      });
+    });
+
+    describe("Form State Coordinates", () => {
+      it("empty form state has empty coordinate strings", () => {
+        expect(emptyDestinationFormState.latitude).toBe("");
+        expect(emptyDestinationFormState.longitude).toBe("");
+      });
+
+      it("destinationToFormState converts null coordinates to empty strings", () => {
+        const dest: Destination = {
+          id: 1,
+          name: "Test",
+          slug: "test",
+          country: null,
+          region: null,
+          shortDescription: null,
+          description: null,
+          status: "published",
+          featured: false,
+          heroImage: null,
+          galleryImages: [],
+          latitude: null,
+          longitude: null,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        const form = destinationToFormState(dest);
+        expect(form.latitude).toBe("");
+        expect(form.longitude).toBe("");
+      });
+
+      it("destinationToFormState converts numeric coordinates to strings", () => {
+        const dest: Destination = {
+          id: 1,
+          name: "Test",
+          slug: "test",
+          country: null,
+          region: null,
+          shortDescription: null,
+          description: null,
+          status: "published",
+          featured: false,
+          heroImage: null,
+          galleryImages: [],
+          latitude: -1.4061,
+          longitude: 36.9661,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        const form = destinationToFormState(dest);
+        expect(form.latitude).toBe("-1.4061");
+        expect(form.longitude).toBe("36.9661");
+      });
+    });
+
+    describe("Coordinate Validation", () => {
+      function validateLatitude(lat: string): boolean {
+        if (!lat.trim()) return true;
+        const num = Number(lat);
+        return !isNaN(num) && num >= -90 && num <= 90;
+      }
+
+      function validateLongitude(lng: string): boolean {
+        if (!lng.trim()) return true;
+        const num = Number(lng);
+        return !isNaN(num) && num >= -180 && num <= 180;
+      }
+
+      it("accepts valid latitude -90", () => {
+        expect(validateLatitude("-90")).toBe(true);
+      });
+
+      it("accepts valid latitude 90", () => {
+        expect(validateLatitude("90")).toBe(true);
+      });
+
+      it("accepts valid latitude 0", () => {
+        expect(validateLatitude("0")).toBe(true);
+      });
+
+      it("accepts valid latitude -1.4061", () => {
+        expect(validateLatitude("-1.4061")).toBe(true);
+      });
+
+      it("rejects latitude below -90", () => {
+        expect(validateLatitude("-90.1")).toBe(false);
+      });
+
+      it("rejects latitude above 90", () => {
+        expect(validateLatitude("90.1")).toBe(false);
+      });
+
+      it("rejects non-numeric latitude", () => {
+        expect(validateLatitude("abc")).toBe(false);
+      });
+
+      it("accepts empty latitude", () => {
+        expect(validateLatitude("")).toBe(true);
+      });
+
+      it("accepts valid longitude -180", () => {
+        expect(validateLongitude("-180")).toBe(true);
+      });
+
+      it("accepts valid longitude 180", () => {
+        expect(validateLongitude("180")).toBe(true);
+      });
+
+      it("accepts valid longitude 0", () => {
+        expect(validateLongitude("0")).toBe(true);
+      });
+
+      it("accepts valid longitude 36.9661", () => {
+        expect(validateLongitude("36.9661")).toBe(true);
+      });
+
+      it("rejects longitude below -180", () => {
+        expect(validateLongitude("-180.1")).toBe(false);
+      });
+
+      it("rejects longitude above 180", () => {
+        expect(validateLongitude("180.1")).toBe(false);
+      });
+
+      it("rejects non-numeric longitude", () => {
+        expect(validateLongitude("xyz")).toBe(false);
+      });
+
+      it("accepts empty longitude", () => {
+        expect(validateLongitude("")).toBe(true);
+      });
+    });
+
+    describe("Destination with Coordinates", () => {
+      it("Maasai Mara destination has valid coordinates", () => {
+        const dest: Destination = {
+          id: 1,
+          name: "Maasai Mara",
+          slug: "maasai-mara",
+          country: "Kenya",
+          region: "Narok County",
+          shortDescription: "Famous wildlife reserve",
+          description: null,
+          status: "published",
+          featured: true,
+          heroImage: null,
+          galleryImages: [],
+          latitude: -1.4061,
+          longitude: 36.9661,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        expect(dest.latitude).toBeGreaterThanOrEqual(-90);
+        expect(dest.latitude).toBeLessThanOrEqual(90);
+        expect(dest.longitude).toBeGreaterThanOrEqual(-180);
+        expect(dest.longitude).toBeLessThanOrEqual(180);
+      });
+
+      it("Destination without coordinates is valid", () => {
+        const dest: Destination = {
+          id: 2,
+          name: "Unknown Location",
+          slug: "unknown-location",
+          country: "Kenya",
+          region: null,
+          shortDescription: null,
+          description: null,
+          status: "published",
+          featured: false,
+          heroImage: null,
+          galleryImages: [],
+          latitude: null,
+          longitude: null,
+          seoTitle: null,
+          seoDescription: null,
+          sortOrder: 0,
+          createdAt: "",
+          updatedAt: "",
+        };
+        expect(dest.latitude).toBeNull();
+        expect(dest.longitude).toBeNull();
+      });
     });
   });
 });

@@ -230,9 +230,13 @@ CREATE TABLE IF NOT EXISTS destinations (
   gallery_images JSONB NOT NULL DEFAULT '[]'::jsonb,
   seo_title VARCHAR(255),
   seo_description TEXT,
+  latitude DECIMAL(10, 7),
+  longitude DECIMAL(10, 7),
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_destinations_latitude_range CHECK (latitude IS NULL OR (latitude >= -90 AND latitude <= 90)),
+  CONSTRAINT chk_destinations_longitude_range CHECK (longitude IS NULL OR (longitude >= -180 AND longitude <= 180))
 );
 
 CREATE INDEX IF NOT EXISTS idx_destinations_slug

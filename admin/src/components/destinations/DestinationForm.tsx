@@ -87,6 +87,24 @@ export default function DestinationForm({
       return;
     }
 
+    if (form.latitude.trim()) {
+      const lat = Number(form.latitude);
+      if (isNaN(lat) || lat < -90 || lat > 90) {
+        setError("Latitude must be between -90 and 90.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (form.longitude.trim()) {
+      const lng = Number(form.longitude);
+      if (isNaN(lng) || lng < -180 || lng > 180) {
+        setError("Longitude must be between -180 and 180.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const payload = {
       name: form.name.trim(),
       slug: form.slug.trim() || slugifyDestination(form.name),
@@ -98,6 +116,8 @@ export default function DestinationForm({
       featured: form.featured,
       heroImage: form.heroImage.trim() || null,
       galleryImages: form.galleryImages.filter((img) => img.url.trim() && img.alt.trim()),
+      latitude: form.latitude.trim() ? Number(form.latitude) : null,
+      longitude: form.longitude.trim() ? Number(form.longitude) : null,
       seoTitle: form.seoTitle.trim() || null,
       seoDescription: form.seoDescription.trim() || null,
       sortOrder: Number(form.sortOrder) || 0,
@@ -210,6 +230,43 @@ export default function DestinationForm({
               placeholder="Southwest Kenya"
               className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
             />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="dest-latitude" className="mb-1.5 block text-sm font-medium text-forest">
+              Latitude
+            </label>
+            <input
+              id="dest-latitude"
+              type="number"
+              step="any"
+              min="-90"
+              max="90"
+              value={form.latitude}
+              onChange={(e) => handleChange("latitude", e.target.value)}
+              placeholder="-1.4061"
+              className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
+            />
+            <p className="mt-1 text-xs text-gray-500">-90 to 90. Leave empty if unknown.</p>
+          </div>
+          <div>
+            <label htmlFor="dest-longitude" className="mb-1.5 block text-sm font-medium text-forest">
+              Longitude
+            </label>
+            <input
+              id="dest-longitude"
+              type="number"
+              step="any"
+              min="-180"
+              max="180"
+              value={form.longitude}
+              onChange={(e) => handleChange("longitude", e.target.value)}
+              placeholder="36.9661"
+              className="w-full rounded-md border border-gray-300 px-4 py-2.5 text-forest outline-none focus:border-forest focus:ring-2 focus:ring-forest/20"
+            />
+            <p className="mt-1 text-xs text-gray-500">-180 to 180. Leave empty if unknown.</p>
           </div>
         </div>
 
