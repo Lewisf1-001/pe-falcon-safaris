@@ -177,6 +177,49 @@ function quotationSentHtml(data: {
 </div></body></html>`;
 }
 
+function inquiryReceivedHtml(data: {
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+  packageName?: string;
+  destinationName?: string;
+  travelDate?: string;
+  guests?: number;
+}) {
+  const details: string[] = [];
+  if (data.subject) details.push(`<p><strong>Subject:</strong> ${escapeHtml(data.subject)}</p>`);
+  if (data.packageName) details.push(`<p><strong>Package:</strong> ${escapeHtml(data.packageName)}</p>`);
+  if (data.destinationName) details.push(`<p><strong>Destination:</strong> ${escapeHtml(data.destinationName)}</p>`);
+  if (data.travelDate) details.push(`<p><strong>Travel Date:</strong> ${escapeHtml(data.travelDate)}</p>`);
+  if (data.guests) details.push(`<p><strong>Guests:</strong> ${data.guests}</p>`);
+  if (data.phone) details.push(`<p><strong>Phone:</strong> ${escapeHtml(data.phone)}</p>`);
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f4f4f4;margin:0;padding:0}
+.container{max-width:600px;margin:0 auto;background:#fff}
+.header{background:#1a3c2a;padding:24px;text-align:center}
+.header h1{color:#d4a843;margin:0;font-size:24px}
+.content{padding:32px 24px;color:#333}
+.highlight{background:#fff7e6;border-left:4px solid #d4a843;padding:16px;margin:16px 0;border-radius:4px}
+.message-box{background:#f0f7f0;border-left:4px solid #1a3c2a;padding:16px;margin:16px 0;border-radius:4px;white-space:pre-wrap}
+.footer{background:#1a3c2a;padding:16px;text-align:center;color:#d4a843;font-size:12px}</style></head>
+<body><div class="container"><div class="header"><h1>PE Falcon Safaris</h1></div>
+<div class="content"><h2>New Website Inquiry</h2>
+<p>A new inquiry has been submitted through the website contact form.</p>
+<div class="highlight">
+<p><strong>Name:</strong> ${escapeHtml(data.name)}</p>
+<p><strong>Email:</strong> ${escapeHtml(data.email)}</p>
+${details.join("\n")}
+</div>
+<div class="message-box"><strong>Message:</strong>\n${escapeHtml(data.message)}</div>
+<p>Please respond to this inquiry within 24 hours.</p>
+<div class="footer"><p>&copy; ${new Date().getFullYear()} PE Falcon Safaris. All rights reserved.</p></div>
+</div></body></html>`;
+}
+
 function quotationAcceptedHtml(data: {
   clientName: string;
   title: string;
@@ -332,6 +375,48 @@ serve(async (req) => {
 
         const results = await Promise.all(
           admins.map((admin) => sendEmail(admin.email, `New Booking Alert - PE Falcon Safaris`, html))
+        );
+
+        result = { success: results.every((r) => r.success), sent: results.length };
+        break;
+      }
+
+      case "inquiry-received": {
+        const { name, email, phone, subject, message, packageName, destinationName, travelDate, guests } = body;
+        if (!name || !email || !message) {
+          return new Response(JSON.stringify({ error: "Missing required fields" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Notify all active admins
+        const { data: admins } = await supabase
+          .from("admins")
+          .select("email")
+          .eq("status", "active")
+          .not("email", "is", null);
+
+        if (!admins || admins.length === 0) {
+          return new Response(JSON.stringify({ message: "No admin users to notify" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const html = inquiryReceivedHtml({
+          name,
+          email,
+          phone,
+          subject,
+          message,
+          packageName,
+          destinationName,
+          travelDate,
+          guests,
+        });
+
+        const results = await Promise.all(
+          admins.map((admin) => sendEmail(admin.email, `New Inquiry - ${subject || "PE Falcon Safaris"}`, html))
         );
 
         result = { success: results.every((r) => r.success), sent: results.length };

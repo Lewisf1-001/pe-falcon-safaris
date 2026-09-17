@@ -13,7 +13,7 @@ const navLinks = [
   { label: "Packages", href: "/packages" },
   { label: "Assistant", href: "/assistant" },
   { label: "About", href: "/#about" },
-  { label: "Contact", href: "/#book" },
+  { label: "Contact", href: "/contact" },
 ];
 
 function isActivePath(pathname: string, href: string) {

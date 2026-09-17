@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import type { DestinationSummary } from "@/lib/destinations";
 import type { SafariPackage } from "@/types/package";
+import WhatsAppButton from "@/components/contact/WhatsAppButton";
+import { buildTripMessage } from "@/lib/whatsapp";
 
 type ItineraryItem = {
   destinationId: number;
@@ -415,11 +417,23 @@ export default function TripBuilder({ destinations, packages }: TripBuilderProps
                         Browse packages
                       </Link>
                       <Link
-                        href="/#book"
-                        className="block w-full rounded-lg bg-forest px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-forest-light"
+                        href="/contact"
+                        className="block w-full rounded-lg border border-gray-200 px-4 py-2.5 text-center text-sm font-medium text-forest transition-colors hover:bg-gray-50"
                       >
-                        Start inquiry
+                        Send inquiry
                       </Link>
+                      <WhatsAppButton
+                        message={buildTripMessage(
+                          itinerary.map((item) => ({
+                            destinationName: item.destinationName,
+                            packageName: item.packageName,
+                            packagePriceUsd: item.packagePriceUsd,
+                          })),
+                          totalEstimate
+                        )}
+                        label="Ask About This Trip on WhatsApp"
+                        className="w-full justify-center"
+                      />
                     </div>
                   </div>
                 </>

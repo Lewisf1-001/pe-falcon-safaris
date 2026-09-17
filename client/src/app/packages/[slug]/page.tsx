@@ -4,8 +4,10 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import PackageGallery from "@/components/packages/PackageGallery";
 import BookSafariButton from "@/components/booking/BookSafariButton";
+import WhatsAppButton from "@/components/contact/WhatsAppButton";
 import FormattedPrice from "@/components/currency/FormattedPrice";
 import { fetchPackageBySlug } from "@/lib/packages";
+import { buildPackageMessage } from "@/lib/whatsapp";
 
 type PackageDetailPageProps = {
   params: Promise<{ slug: string }>;
@@ -83,7 +85,13 @@ export default async function PackageDetailPage({ params }: PackageDetailPagePro
                     <p className="mt-1 text-sm text-gray-500">per person ({safariPackage.priceNote})</p>
                   )}
                 </div>
-                <BookSafariButton slug={safariPackage.slug} />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <BookSafariButton slug={safariPackage.slug} />
+                  <WhatsAppButton
+                    message={buildPackageMessage(safariPackage.name)}
+                    label="Ask on WhatsApp"
+                  />
+                </div>
               </div>
             </div>
           </div>

@@ -7,6 +7,7 @@ const quickLinks = [
   { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
   { label: "Safari Assistant", href: "/assistant" },
+  { label: "Contact Us", href: "/contact" },
   { label: "Book Now", href: "/#book" },
   { label: "About Us", href: "/#about" },
 ];

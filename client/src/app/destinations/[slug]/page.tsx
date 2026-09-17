@@ -3,6 +3,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { fetchDestinationBySlug, fetchPublishedDestinations } from "@/lib/destinations";
+import WhatsAppButton from "@/components/contact/WhatsAppButton";
+import { buildDestinationMessage } from "@/lib/whatsapp";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -101,6 +103,18 @@ export default async function DestinationDetailPage({ params }: Props) {
                 {paragraph}
               </p>
             ))}
+          </div>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <WhatsAppButton
+              message={buildDestinationMessage(destination.name)}
+              label={`Ask About ${destination.name}`}
+            />
+            <Link
+              href="/contact"
+              className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-5 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-gray-50"
+            >
+              Send an Inquiry
+            </Link>
           </div>
         </section>
       )}
