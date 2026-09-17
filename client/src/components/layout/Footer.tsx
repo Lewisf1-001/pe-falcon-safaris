@@ -9,6 +9,7 @@ const quickLinks = [
   { label: "Packages", href: "/packages" },
   { label: "Reviews", href: "/reviews" },
   { label: "Safari Assistant", href: "/assistant" },
+  { label: "Safari Journal", href: "/journal" },
   { label: "Contact Us", href: "/contact" },
 ];
 

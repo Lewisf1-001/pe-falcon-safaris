@@ -14,6 +14,7 @@ const navItems = [
   { label: "Quotations", href: "/quotations" },
   { label: "Destinations", href: "/destinations" },
   { label: "Wildlife", href: "/wildlife" },
+  { label: "Journal", href: "/journal" },
   { label: "Packages", href: "/packages" },
   { label: "Payments", href: "/payments" },
   { label: "Reviews", href: "/reviews" },
