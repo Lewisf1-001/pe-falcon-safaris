@@ -72,16 +72,19 @@ export default function StatsCards() {
 
   if (!stats) return null;
 
+  const bookings = stats.bookingsByStatus || {};
+  const payments = stats.paymentsByStatus || {};
+
   const activeBookings =
-    (stats.bookingsByStatus.confirmed || 0) +
-    (stats.bookingsByStatus.upcoming || 0) +
-    (stats.bookingsByStatus.in_progress || 0);
+    (bookings.confirmed || 0) +
+    (bookings.upcoming || 0) +
+    (bookings.in_progress || 0);
 
   const pendingActions =
-    (stats.bookingsByStatus.inquiry || 0) +
-    (stats.bookingsByStatus.quote || 0) +
-    (stats.bookingsByStatus.pending || 0) +
-    (stats.bookingsByStatus.deposit_required || 0);
+    (bookings.inquiry || 0) +
+    (bookings.quote || 0) +
+    (bookings.pending || 0) +
+    (bookings.deposit_required || 0);
 
   const cards = [
     {
@@ -93,7 +96,7 @@ export default function StatsCards() {
     {
       label: "Total Revenue",
       value: formatCurrency(stats.totalRevenue),
-      detail: `${stats.paymentsByStatus.completed || 0} completed payments`,
+      detail: `${payments.completed || 0} completed payments`,
       tone: "positive" as const,
     },
     {

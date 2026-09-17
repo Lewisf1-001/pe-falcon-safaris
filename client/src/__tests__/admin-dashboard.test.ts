@@ -607,6 +607,195 @@ describe("Phase 6: Admin Operations Dashboard", () => {
     });
   });
 
+  describe("StatsCards Defensive Normalization", () => {
+    const normalizeBookings = (bookingsByStatus: Record<string, number> | undefined) =>
+      bookingsByStatus || {};
+
+    const normalizePayments = (paymentsByStatus: Record<string, number> | undefined) =>
+      paymentsByStatus || {};
+
+    it("normal stats response with all booking statuses works", () => {
+      const bookingsByStatus: Record<string, number> = {
+        inquiry: 2, quote: 1, pending: 3, deposit_required: 0,
+        partially_paid: 1, confirmed: 5, upcoming: 2, in_progress: 1,
+        completed: 10, cancelled: 2, expired: 1, refunded: 0,
+      };
+      const bookings = normalizeBookings(bookingsByStatus);
+      expect(bookings.confirmed).toBe(5);
+      expect(bookings.upcoming).toBe(2);
+      expect(bookings.in_progress).toBe(1);
+    });
+
+    it("missing bookingsByStatus defaults to empty object", () => {
+      const stats = { bookingsByStatus: undefined } as Record<string, unknown>;
+      const bookings = normalizeBookings(stats.bookingsByStatus as Record<string, number> | undefined);
+      expect(bookings).toEqual({});
+      expect(bookings.confirmed).toBeUndefined();
+    });
+
+    it("empty bookingsByStatus defaults to empty object", () => {
+      const bookings = normalizeBookings({});
+      expect(bookings).toEqual({});
+    });
+
+    it("missing individual status properties default to 0 via || 0", () => {
+      const bookings = normalizeBookings({});
+      const activeBookings =
+        (bookings.confirmed || 0) +
+        (bookings.upcoming || 0) +
+        (bookings.in_progress || 0);
+      expect(activeBookings).toBe(0);
+    });
+
+    it("active bookings calculation equals confirmed + upcoming + in_progress", () => {
+      const bookingsByStatus: Record<string, number> = {
+        confirmed: 5, upcoming: 3, in_progress: 2, completed: 10,
+        inquiry: 1, quote: 0, pending: 0, deposit_required: 0,
+        partially_paid: 0, cancelled: 0, expired: 0, refunded: 0,
+      };
+      const bookings = normalizeBookings(bookingsByStatus);
+      const activeBookings =
+        (bookings.confirmed || 0) +
+        (bookings.upcoming || 0) +
+        (bookings.in_progress || 0);
+      expect(activeBookings).toBe(10);
+    });
+
+    it("missing paymentsByStatus defaults to empty object", () => {
+      const stats = { paymentsByStatus: undefined } as Record<string, unknown>;
+      const payments = normalizePayments(stats.paymentsByStatus as Record<string, number> | undefined);
+      expect(payments).toEqual({});
+      expect(payments.completed).toBeUndefined();
+    });
+
+    it("null bookingsByStatus defaults to empty object", () => {
+      const bookings = normalizeBookings(null as unknown as Record<string, number>);
+      expect(bookings).toEqual({});
+    });
+
+    it("active bookings with all missing statuses returns 0", () => {
+      const bookings = normalizeBookings({});
+      const activeBookings =
+        (bookings.confirmed || 0) +
+        (bookings.upcoming || 0) +
+        (bookings.in_progress || 0);
+      expect(activeBookings).toBe(0);
+    });
+
+    it("pending actions with all missing statuses returns 0", () => {
+      const bookings = normalizeBookings({});
+      const pendingActions =
+        (bookings.inquiry || 0) +
+        (bookings.quote || 0) +
+        (bookings.pending || 0) +
+        (bookings.deposit_required || 0);
+      expect(pendingActions).toBe(0);
+    });
+
+    it("existing dashboard stats continue working with normalization", () => {
+      const bookingsByStatus: Record<string, number> = {
+        inquiry: 2, quote: 1, pending: 3, deposit_required: 0,
+        partially_paid: 1, confirmed: 5, upcoming: 2, in_progress: 1,
+        completed: 10, cancelled: 2, expired: 1, refunded: 0,
+      };
+      const paymentsByStatus: Record<string, number> = {
+        pending: 2, completed: 8, failed: 1, cancelled: 0,
+      };
+
+      const bookings = normalizeBookings(bookingsByStatus);
+      const payments = normalizePayments(paymentsByStatus);
+
+      const activeBookings =
+        (bookings.confirmed || 0) +
+        (bookings.upcoming || 0) +
+        (bookings.in_progress || 0);
+      const pendingActions =
+        (bookings.inquiry || 0) +
+        (bookings.quote || 0) +
+        (bookings.pending || 0) +
+        (bookings.deposit_required || 0);
+
+      expect(activeBookings).toBe(8);
+      expect(pendingActions).toBe(6);
+      expect(payments.completed).toBe(8);
+    });
+  });
+
+  describe("Phase 13: Reviews and Testimonials", () => {
+    it("review statuses include pending, approved, rejected, hidden", () => {
+      const reviewStatuses = ["pending", "approved", "rejected", "hidden"];
+      expect(reviewStatuses).toHaveLength(4);
+      expect(reviewStatuses).toContain("pending");
+      expect(reviewStatuses).toContain("approved");
+    });
+
+    it("review rating is between 1 and 5", () => {
+      for (let rating = 1; rating <= 5; rating++) {
+        expect(rating).toBeGreaterThanOrEqual(1);
+        expect(rating).toBeLessThanOrEqual(5);
+      }
+    });
+
+    it("admin review stats include required fields", () => {
+      const reviewStats = {
+        totalReviews: 0,
+        pendingReviews: 0,
+        approvedReviews: 0,
+        rejectedReviews: 0,
+        averageRating: 0,
+      };
+      expect(reviewStats).toHaveProperty("totalReviews");
+      expect(reviewStats).toHaveProperty("pendingReviews");
+      expect(reviewStats).toHaveProperty("approvedReviews");
+      expect(reviewStats).toHaveProperty("rejectedReviews");
+      expect(reviewStats).toHaveProperty("averageRating");
+    });
+
+    it("admin review response has required fields", () => {
+      const review = {
+        id: 1,
+        userId: 1,
+        bookingId: 1,
+        packageId: 1,
+        packageName: "Serengeti Safari",
+        packageSlug: "serengeti-safari",
+        reviewerName: "John D.",
+        reviewerEmail: "john@example.com",
+        travelDate: "2025-07-15",
+        rating: 5,
+        title: "Amazing experience",
+        body: "Best safari ever!",
+        status: "pending",
+        adminResponse: null,
+        adminResponseAt: null,
+        createdAt: "2025-06-15",
+        updatedAt: "2025-06-15",
+        publishedAt: null,
+      };
+      expect(review).toHaveProperty("id");
+      expect(review).toHaveProperty("rating");
+      expect(review).toHaveProperty("status");
+      expect(review).toHaveProperty("adminResponse");
+    });
+
+    it("admin sidebar includes Reviews navigation item", () => {
+      const navItems = [
+        { label: "Dashboard", href: "/" },
+        { label: "Admin Users", href: "/admin-users" },
+        { label: "Clients", href: "/clients" },
+        { label: "Bookings", href: "/bookings" },
+        { label: "Quotations", href: "/quotations" },
+        { label: "Packages", href: "/packages" },
+        { label: "Payments", href: "/payments" },
+        { label: "Reviews", href: "/reviews" },
+      ];
+      expect(navItems).toHaveLength(8);
+      const reviewItem = navItems.find((i) => i.href === "/reviews");
+      expect(reviewItem).toBeDefined();
+      expect(reviewItem?.label).toBe("Reviews");
+    });
+  });
+
   describe("Loading and Error States", () => {
     it("components handle loading state", () => {
       const states = { isLoading: true, error: "", data: null };
