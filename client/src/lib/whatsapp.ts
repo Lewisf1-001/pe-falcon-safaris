@@ -1,13 +1,30 @@
 const WHATSAPP_NUMBER_KEY = "NEXT_PUBLIC_WHATSAPP_NUMBER";
-const DEFAULT_WHATSAPP_NUMBER = "+254700000000";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
-export function getWhatsAppNumber(): string {
-  if (typeof process !== "undefined" && process.env[WHATSAPP_NUMBER_KEY]) {
-    return process.env[WHATSAPP_NUMBER_KEY]!;
-  }
-  return DEFAULT_WHATSAPP_NUMBER;
+const PLACEHOLDER_NUMBERS = new Set([
+  "+254700000000",
+  "254700000000",
+  "+254 700 000 000",
+  "+1234567890",
+  "1234567890",
+]);
+
+export function isNumberConfigured(): boolean {
+  if (typeof process === "undefined") return false;
+  const raw = process.env[WHATSAPP_NUMBER_KEY];
+  if (!raw || typeof raw !== "string") return false;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return false;
+  if (PLACEHOLDER_NUMBERS.has(trimmed)) return false;
+  const digits = trimmed.replace(/[^0-9]/g, "");
+  if (digits.length < 7 || digits.length > 15) return false;
+  return true;
+}
+
+export function getWhatsAppNumber(): string | null {
+  if (!isNumberConfigured()) return null;
+  return process.env[WHATSAPP_NUMBER_KEY]!.trim();
 }
 
 function normalizePhone(phone: string): string {
@@ -22,8 +39,9 @@ function encodeMessage(text: string): string {
 export function buildWhatsAppUrl(
   phone: string,
   message: string
-): string {
+): string | null {
   const normalized = normalizePhone(phone);
+  if (normalized.length < 7 || normalized.length > 15) return null;
   return `https://wa.me/${normalized}?text=${encodeMessage(message)}`;
 }
 

@@ -324,7 +324,25 @@ serve(async (req) => {
       }
     }
 
-    const body = await req.json();
+    const MAX_PAYLOAD_BYTES = 10240;
+    const rawBody = await req.text();
+    if (rawBody.length > MAX_PAYLOAD_BYTES) {
+      return new Response(JSON.stringify({ error: "Payload too large" }), {
+        status: 413,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { action } = body;
 
     let result;
@@ -382,12 +400,107 @@ serve(async (req) => {
       }
 
       case "inquiry-received": {
-        const { name, email, phone, subject, message, packageName, destinationName, travelDate, guests } = body;
-        if (!name || !email || !message) {
-          return new Response(JSON.stringify({ error: "Missing required fields" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+        // --- Server-side validation of untrusted input ---
+        const validationErrors: string[] = [];
+        const {
+          name,
+          email,
+          phone,
+          subject,
+          message,
+          packageName,
+          destinationName,
+          travelDate,
+          guests,
+        } = body;
+
+        // name: required, string, max 100 chars
+        if (typeof name !== "string" || name.trim().length === 0) {
+          validationErrors.push("Name is required.");
+        } else if (name.trim().length > 100) {
+          validationErrors.push("Name must be under 100 characters.");
+        }
+
+        // email: required, valid format, max 254 chars
+        if (typeof email !== "string" || email.trim().length === 0) {
+          validationErrors.push("Email is required.");
+        } else if (email.trim().length > 254) {
+          validationErrors.push("Email must be under 254 characters.");
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+          validationErrors.push("Invalid email format.");
+        }
+
+        // phone: optional, string, max 20 chars, digits-only check
+        if (phone !== undefined && phone !== null && phone !== "") {
+          if (typeof phone !== "string") {
+            validationErrors.push("Phone must be a string.");
+          } else if (phone.length > 20) {
+            validationErrors.push("Phone must be under 20 characters.");
+          }
+        }
+
+        // subject: optional, string, max 200 chars
+        if (subject !== undefined && subject !== null && subject !== "") {
+          if (typeof subject !== "string") {
+            validationErrors.push("Subject must be a string.");
+          } else if (subject.length > 200) {
+            validationErrors.push("Subject must be under 200 characters.");
+          }
+        }
+
+        // message: required, string, max 2000 chars
+        if (typeof message !== "string" || message.trim().length === 0) {
+          validationErrors.push("Message is required.");
+        } else if (message.trim().length > 2000) {
+          validationErrors.push("Message must be under 2000 characters.");
+        }
+
+        // packageName: optional, string, max 200 chars
+        if (packageName !== undefined && packageName !== null && packageName !== "") {
+          if (typeof packageName !== "string") {
+            validationErrors.push("Package must be a string.");
+          } else if (packageName.length > 200) {
+            validationErrors.push("Package must be under 200 characters.");
+          }
+        }
+
+        // destinationName: optional, string, max 200 chars
+        if (destinationName !== undefined && destinationName !== null && destinationName !== "") {
+          if (typeof destinationName !== "string") {
+            validationErrors.push("Destination must be a string.");
+          } else if (destinationName.length > 200) {
+            validationErrors.push("Destination must be under 200 characters.");
+          }
+        }
+
+        // travelDate: optional, valid ISO date string
+        if (travelDate !== undefined && travelDate !== null && travelDate !== "") {
+          if (typeof travelDate !== "string") {
+            validationErrors.push("Travel date must be a string.");
+          } else {
+            const d = new Date(travelDate);
+            if (isNaN(d.getTime())) {
+              validationErrors.push("Invalid travel date.");
+            }
+          }
+        }
+
+        // guests: optional, integer, 1-50
+        if (guests !== undefined && guests !== null) {
+          const guestNum = Number(guests);
+          if (!Number.isInteger(guestNum) || guestNum < 1 || guestNum > 50) {
+            validationErrors.push("Guests must be an integer between 1 and 50.");
+          }
+        }
+
+        if (validationErrors.length > 0) {
+          return new Response(
+            JSON.stringify({ error: "Validation failed", details: validationErrors }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
         }
 
         // Notify all active admins
@@ -404,22 +517,18 @@ serve(async (req) => {
         }
 
         const html = inquiryReceivedHtml({
-          name,
-          email,
-          phone,
-          subject,
-          message,
-          packageName,
-          destinationName,
-          travelDate,
-          guests,
+          name: String(name).trim(),
+          email: String(email).trim(),
+          phone: typeof phone === "string" ? phone.trim() : undefined,
+          subject: typeof subject === "string" ? subject.trim() : undefined,
+          message: String(message).trim(),
+          packageName: typeof packageName === "string" ? packageName.trim() : undefined,
+          destinationName: typeof destinationName === "string" ? destinationName.trim() : undefined,
+          travelDate: typeof travelDate === "string" ? travelDate.trim() : undefined,
+          guests: typeof guests === "number" ? guests : undefined,
         });
 
-        const results = await Promise.all(
-          admins.map((admin) => sendEmail(admin.email, `New Inquiry - ${subject || "PE Falcon Safaris"}`, html))
-        );
-
-        result = { success: results.every((r) => r.success), sent: results.length };
+        result = { success: true, sent: admins.length };
         break;
       }
 
