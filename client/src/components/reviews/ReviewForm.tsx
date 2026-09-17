@@ -13,6 +13,7 @@ type BookingOption = {
 type ReviewFormProps = {
   bookings: BookingOption[];
   onSuccess?: () => void;
+  error?: string;
 };
 
 const INITIAL_STATE: ReviewFormData = {
@@ -48,7 +49,7 @@ function validate(form: ReviewFormData): string[] {
   return errors;
 }
 
-export default function ReviewForm({ bookings, onSuccess }: ReviewFormProps) {
+export default function ReviewForm({ bookings, onSuccess, error }: ReviewFormProps) {
   const [form, setForm] = useState<ReviewFormData>(INITIAL_STATE);
   const [errors, setErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -147,12 +148,18 @@ export default function ReviewForm({ bookings, onSuccess }: ReviewFormProps) {
   if (bookings.length === 0) {
     return (
       <div className="rounded-xl border border-gray-100 bg-gray-50 p-8 text-center">
-        <p className="text-gray-500">
-          You don&apos;t have any completed safaris to review yet.
-        </p>
-        <p className="mt-2 text-sm text-gray-400">
-          Once your safari is completed, you&apos;ll be able to leave a review.
-        </p>
+        {error ? (
+          <p className="text-red-600">{error}</p>
+        ) : (
+          <>
+            <p className="text-gray-500">
+              You don&apos;t have any completed safaris to review yet.
+            </p>
+            <p className="mt-2 text-sm text-gray-400">
+              Once your safari is completed, you&apos;ll be able to leave a review.
+            </p>
+          </>
+        )}
       </div>
     );
   }

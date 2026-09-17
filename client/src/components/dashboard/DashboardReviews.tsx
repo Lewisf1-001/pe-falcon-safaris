@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { getUser, getAuthToken } from "@/lib/auth";
 import { fetchUserReviews, fetchCompletedBookings } from "@/lib/reviews";
 import ReviewForm from "@/components/reviews/ReviewForm";
@@ -47,6 +46,7 @@ export default function DashboardReviews() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [bookings, setBookings] = useState<BookingOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [activeTab, setActiveTab] = useState<"reviews" | "submit">("reviews");
 
   useEffect(() => {
@@ -60,13 +60,28 @@ export default function DashboardReviews() {
       const token = await getAuthToken();
       if (!token) return;
 
-      const [userReviews, completedBookings] = await Promise.all([
-        fetchUserReviews(token),
-        fetchCompletedBookings(token),
-      ]);
+      const errors: string[] = [];
 
-      setReviews(userReviews);
-      setBookings(completedBookings);
+      try {
+        const userReviews = await fetchUserReviews(token);
+        setReviews(userReviews);
+      } catch {
+        errors.push("reviews");
+      }
+
+      try {
+        const completedBookings = await fetchCompletedBookings(token);
+        setBookings(completedBookings);
+      } catch {
+        errors.push("bookings");
+      }
+
+      if (errors.length > 0) {
+        setFetchError(
+          `Unable to load ${errors.join(" and ")}. Please try refreshing the page.`
+        );
+      }
+
       setIsLoading(false);
     }
 
@@ -75,9 +90,12 @@ export default function DashboardReviews() {
 
   function handleReviewSubmitted() {
     setActiveTab("reviews");
-    // Reload reviews
     getAuthToken().then((token) => {
-      if (token) fetchUserReviews(token).then(setReviews);
+      if (token) {
+        fetchUserReviews(token)
+          .then(setReviews)
+          .catch(() => {});
+      }
     });
   }
 
@@ -122,9 +140,19 @@ export default function DashboardReviews() {
         </div>
       </div>
 
+      {fetchError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {fetchError}
+        </div>
+      )}
+
       <div className="mt-6">
         {activeTab === "submit" ? (
-          <ReviewForm bookings={bookings} onSuccess={handleReviewSubmitted} />
+          <ReviewForm
+            bookings={bookings}
+            onSuccess={handleReviewSubmitted}
+            error={fetchError || undefined}
+          />
         ) : reviews.length === 0 ? (
           <div className="rounded-lg border border-gray-100 bg-gray-50 p-8 text-center">
             <p className="text-gray-500">You haven&apos;t submitted any reviews yet.</p>

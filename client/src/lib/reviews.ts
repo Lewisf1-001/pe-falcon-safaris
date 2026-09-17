@@ -112,75 +112,67 @@ export async function fetchApprovedReviewsForPackage(
 export async function fetchUserReviews(
   authToken: string
 ): Promise<Review[]> {
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: `Bearer ${authToken}` } },
-    });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: `Bearer ${authToken}` } },
+  });
 
-    const { data, error } = await supabase
-      .from("reviews")
-      .select(`
-        *,
-        packages!reviews_package_id_fkey (name, slug)
-      `)
-      .order("created_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("reviews")
+    .select(`
+      *,
+      packages!reviews_package_id_fkey (name, slug)
+    `)
+    .order("created_at", { ascending: false });
 
-    if (error) throw error;
+  if (error) throw new Error(error.message);
 
-    return (data || []).map((r) => ({
-      id: Number(r.id),
-      userId: Number(r.user_id),
-      bookingId: Number(r.booking_id),
-      packageId: r.package_id ? Number(r.package_id) : null,
-      packageName: pickStr(r.packages, "name"),
-      packageSlug: pickStr(r.packages, "slug"),
-      rating: r.rating,
-      title: r.title,
-      body: r.body,
-      status: r.status,
-      adminResponse: r.admin_response,
-      adminResponseAt: r.admin_response_at,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      publishedAt: r.published_at,
-    }));
-  } catch {
-    return [];
-  }
+  return (data || []).map((r) => ({
+    id: Number(r.id),
+    userId: Number(r.user_id),
+    bookingId: Number(r.booking_id),
+    packageId: r.package_id ? Number(r.package_id) : null,
+    packageName: pickStr(r.packages, "name"),
+    packageSlug: pickStr(r.packages, "slug"),
+    rating: r.rating,
+    title: r.title,
+    body: r.body,
+    status: r.status,
+    adminResponse: r.admin_response,
+    adminResponseAt: r.admin_response_at,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    publishedAt: r.published_at,
+  }));
 }
 
 export async function fetchCompletedBookings(
   authToken: string
 ): Promise<Array<{ id: number; packageName: string; packageSlug: string; travelDate: string }>> {
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: `Bearer ${authToken}` } },
-    });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: `Bearer ${authToken}` } },
+  });
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(`
-        id, travel_date,
-        packages!bookings_package_id_fkey (name, slug)
-      `)
-      .eq("status", "completed")
-      .order("travel_date", { ascending: false });
+  const { data, error } = await supabase
+    .from("bookings")
+    .select(`
+      id, travel_date,
+      packages!bookings_package_id_fkey (name, slug)
+    `)
+    .eq("status", "completed")
+    .order("travel_date", { ascending: false });
 
-    if (error) throw error;
+  if (error) throw new Error(error.message);
 
-    return (data || [])
-      .filter((b) => b.packages != null)
-      .map((b) => ({
-        id: Number(b.id),
-        packageName: pickStr(b.packages, "name") || "",
-        packageSlug: pickStr(b.packages, "slug") || "",
-        travelDate: b.travel_date?.slice(0, 10) || "",
-      }));
-  } catch {
-    return [];
-  }
+  return (data || [])
+    .filter((b) => b.packages != null)
+    .map((b) => ({
+      id: Number(b.id),
+      packageName: pickStr(b.packages, "name") || "",
+      packageSlug: pickStr(b.packages, "slug") || "",
+      travelDate: b.travel_date?.slice(0, 10) || "",
+    }));
 }
