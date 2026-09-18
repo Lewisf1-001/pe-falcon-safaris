@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  paymentFailedHtml as sharedPaymentFailedHtml,
+  resolveNotificationEmailBranch,
+} from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -246,6 +250,14 @@ function quotationAcceptedHtml(data: {
 <p>Warm regards,<br><strong>PE Falcon Safaris System</strong></p></div>
 <div class="footer"><p>&copy; ${new Date().getFullYear()} PE Falcon Safaris. All rights reserved.</p></div>
 </div></body></html>`;
+}
+
+function paymentFailedHtml(data: {
+  clientName: string;
+  amount: number;
+  packageName: string;
+}) {
+  return sharedPaymentFailedHtml(data);
 }
 
 async function sendEmail(to: string, subject: string, html: string) {
@@ -528,7 +540,11 @@ serve(async (req) => {
           guests: typeof guests === "number" ? guests : undefined,
         });
 
-        result = { success: true, sent: admins.length };
+        const inquiryResults = await Promise.all(
+          admins.map((admin) => sendEmail(admin.email, `New Website Inquiry - PE Falcon Safaris`, html))
+        );
+
+        result = { success: inquiryResults.every((r) => r.success), sent: inquiryResults.length };
         break;
       }
 
@@ -630,6 +646,135 @@ serve(async (req) => {
           result = { success: results.every((r) => r.success), sent: results.length };
         } else {
           result = { success: true, sent: 0 };
+        }
+        break;
+      }
+
+      case "notification-email": {
+        // Internal action: send an email for a notification event.
+        // Called by the notifications Edge Function. Requires service-role auth.
+        if (!isInternalCall) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const { notificationType, userEmail, userName, referenceType, referenceId } = body;
+
+        if (!notificationType || !userEmail) {
+          return new Response(
+            JSON.stringify({ error: "Missing required fields: notificationType, userEmail" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        let emailSubject = "";
+        let html = "";
+
+        const emailBranch = resolveNotificationEmailBranch(String(notificationType));
+        if (emailBranch === "skip") {
+          result = { success: true, sent: 0, skipped: true };
+          break;
+        }
+
+        switch (emailBranch) {
+          case "booking_received": {
+            // Fetch booking + package details
+            const { data: bookingData } = await supabase
+              .from("bookings")
+              .select("travel_date, guests, total_price_usd, package_id, packages!bookings_package_id_fkey (name)")
+              .eq("id", referenceId)
+              .single();
+
+            if (!bookingData) {
+              result = { success: false, error: "Booking not found" };
+              break;
+            }
+
+            const pkgName = (bookingData as { packages?: { name?: string } }).packages?.name || "Safari Package";
+            emailSubject = `Booking Confirmed - ${pkgName}`;
+            html = bookingConfirmationHtml({
+              clientName: userName || "Customer",
+              packageName: pkgName,
+              travelDate: bookingData.travel_date?.slice(0, 10) || "N/A",
+              guests: bookingData.guests || 0,
+              total: Number(bookingData.total_price_usd) || 0,
+            });
+            break;
+          }
+
+          case "payment_received": {
+            // Fetch payment + booking + package details
+            const { data: paymentData } = await supabase
+              .from("payments")
+              .select("amount_usd, external_ref, booking_id")
+              .eq("booking_id", referenceId)
+              .eq("status", "completed")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .single();
+
+            if (!paymentData) {
+              result = { success: false, error: "Payment not found" };
+              break;
+            }
+
+            const { data: payBooking } = await supabase
+              .from("bookings")
+              .select("packages!bookings_package_id_fkey (name)")
+              .eq("id", paymentData.booking_id)
+              .single();
+
+            const payPkgName = (payBooking as { packages?: { name?: string } } | null)?.packages?.name || "Safari Package";
+            emailSubject = "Payment Received - PE Falcon Safaris";
+            html = paymentConfirmationHtml({
+              clientName: userName || "Customer",
+              amount: Number(paymentData.amount_usd),
+              method: "M-Pesa",
+              reference: paymentData.external_ref || "N/A",
+              packageName: payPkgName,
+            });
+            break;
+          }
+
+          case "payment_failed": {
+            // Fetch booking + package details
+            const { data: failBooking } = await supabase
+              .from("bookings")
+              .select("packages!bookings_package_id_fkey (name)")
+              .eq("id", referenceId)
+              .single();
+
+            const failPkgName = (failBooking as { packages?: { name?: string } } | null)?.packages?.name || "Safari Package";
+
+            // Fetch the latest failed payment for this booking
+            const { data: failPayment } = await supabase
+              .from("payments")
+              .select("amount_usd")
+              .eq("booking_id", referenceId)
+              .eq("status", "failed")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .single();
+
+            const failAmount = failPayment ? Number(failPayment.amount_usd) : 0;
+
+            emailSubject = "Payment Not Processed - PE Falcon Safaris";
+            html = paymentFailedHtml({
+              clientName: userName || "Customer",
+              amount: failAmount,
+              packageName: failPkgName,
+            });
+            break;
+          }
+        }
+
+        if (html && emailSubject) {
+          const emailResult = await sendEmail(userEmail, emailSubject, html);
+          result = { success: emailResult.success, sent: emailResult.success ? 1 : 0, error: emailResult.error };
+        } else if (!result) {
+          result = { success: true, sent: 0, skipped: true };
         }
         break;
       }

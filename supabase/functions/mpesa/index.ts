@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildPaymentFailedNotification,
+  buildPaymentReceivedNotification,
+  mapMpesaResultCodeToPaymentStatus,
+  shouldEmitPaymentFailed,
+  shouldEmitPaymentReceived,
+  shouldNotifyAfterStkFailure,
+} from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -146,6 +154,32 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
+/** Fire-and-forget payment failure notification (non-blocking). */
+function notifyPaymentFailed(payment: PaymentRow): void {
+  try {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const body = buildPaymentFailedNotification({
+      userId: payment.user_id,
+      bookingId: payment.booking_id,
+      amountUsd: payment.amount_usd,
+    });
+
+    fetch(`${supabaseUrl}/functions/v1/notifications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: supabaseKey,
+      },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  } catch {
+    // Notifications are non-critical
+  }
+}
+
 class HttpError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -290,6 +324,9 @@ async function handleStkPush(req: Request, body: StkPushBody): Promise<Response>
       .from("payments")
       .update({ status: "failed", updated_at: new Date().toISOString() })
       .eq("id", typedPayment.id);
+    if (shouldNotifyAfterStkFailure({ httpOk: false })) {
+      notifyPaymentFailed(typedPayment);
+    }
     return json({ error: `STK push failed: ${errText}` }, 502);
   }
 
@@ -301,6 +338,9 @@ async function handleStkPush(req: Request, body: StkPushBody): Promise<Response>
       .from("payments")
       .update({ status: "failed", updated_at: new Date().toISOString() })
       .eq("id", typedPayment.id);
+    if (shouldNotifyAfterStkFailure({ httpOk: true, responseCode: stkData.ResponseCode })) {
+      notifyPaymentFailed(typedPayment);
+    }
     return json(
       { error: stkData.ResponseDescription || "STK push rejected", ResponseCode: stkData.ResponseCode },
       502
@@ -408,6 +448,11 @@ async function confirmBookingForPayment(
   // Fire-and-forget in-app notification (non-blocking)
   try {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const body = buildPaymentReceivedNotification({
+      userId: payment.user_id,
+      bookingId: payment.booking_id,
+      amountUsd: payment.amount_usd,
+    });
     fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/notifications`, {
       method: "POST",
       headers: {
@@ -415,14 +460,7 @@ async function confirmBookingForPayment(
         Authorization: `Bearer ${serviceRoleKey}`,
         apikey: Deno.env.get("SUPABASE_ANON_KEY")!,
       },
-      body: JSON.stringify({
-        userId: payment.user_id,
-        type: "payment_received",
-        title: "Payment Received",
-        message: `Your payment of USD ${Number(payment.amount_usd).toFixed(2)} has been received.`,
-        referenceType: "booking",
-        referenceId: payment.booking_id,
-      }),
+      body: JSON.stringify(body),
     }).catch(() => {});
   } catch {
     // Notifications are non-critical
@@ -493,7 +531,8 @@ async function handleCallback(req: Request): Promise<Response> {
   let status = "failed";
   let mpesaReceipt: string | null = null;
 
-  if (resultCode === 0) {
+  const mapped = mapMpesaResultCodeToPaymentStatus(resultCode);
+  if (mapped === "completed") {
     status = "completed";
     const callbackMetadata = callback.CallbackMetadata?.Item || [];
     for (const item of callbackMetadata) {
@@ -501,7 +540,7 @@ async function handleCallback(req: Request): Promise<Response> {
         mpesaReceipt = String(item.Value ?? "");
       }
     }
-  } else if (resultCode === 1032) {
+  } else if (mapped === "cancelled") {
     // User cancelled / dismissed the STK prompt
     status = "cancelled";
   }
@@ -520,8 +559,10 @@ async function handleCallback(req: Request): Promise<Response> {
     console.error("Failed to update payment:", updateError);
   }
 
-  if (status === "completed") {
+  if (shouldEmitPaymentReceived(status)) {
     await confirmBookingForPayment(supabase, typedPayment);
+  } else if (shouldEmitPaymentFailed(status)) {
+    notifyPaymentFailed(typedPayment);
   }
 
   return json({ ResultCode: 0, ResultDesc: "Callback processed successfully" });
@@ -591,12 +632,9 @@ async function handleStatus(checkoutRequestId: string, req: Request): Promise<Re
       const queryData = await queryRes.json();
 
       let newStatus = typedPayment.status;
-      if (queryData.ResultCode === "0" || queryData.ResultCode === 0) {
-        newStatus = "completed";
-      } else if (queryData.ResultCode === "1032" || queryData.ResultCode === 1032) {
-        newStatus = "cancelled";
-      } else if (queryData.ResultCode !== undefined && queryData.ResultCode !== null && queryData.ResultCode !== "") {
-        newStatus = "failed";
+      const mapped = mapMpesaResultCodeToPaymentStatus(queryData.ResultCode);
+      if (mapped) {
+        newStatus = mapped;
       }
 
       if (newStatus !== typedPayment.status) {
@@ -615,8 +653,10 @@ async function handleStatus(checkoutRequestId: string, req: Request): Promise<Re
           typedPayment.status = newStatus;
         }
 
-        if (newStatus === "completed") {
+        if (shouldEmitPaymentReceived(newStatus)) {
           await confirmBookingForPayment(supabase, typedPayment);
+        } else if (shouldEmitPaymentFailed(newStatus)) {
+          notifyPaymentFailed(typedPayment);
         }
       }
     }

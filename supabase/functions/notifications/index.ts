@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { EMAIL_ELIGIBLE_TYPES } from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -24,33 +25,56 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Client with user's JWT for reads (RLS-scoped to their data)
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: {
         headers: { Authorization: req.headers.get("Authorization")! },
       },
     });
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    // Service-role client for inserts and internal lookups
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
 
-    if (authError || !user) {
-      return jsonError("Unauthorized", 401);
-    }
+    // Determine if caller is service-role (for POST endpoint)
+    const isServiceRole = req.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
 
-    const { data: profile } = await supabase
-      .from("users")
-      .select("id")
-      .eq("auth_id", user.id)
-      .single();
+    // For non-POST endpoints (GET, PATCH), require authenticated user with profile
+    // For POST, require either service-role or admin
+    let profile: { id: number } | null = null;
 
-    if (!profile) {
-      return jsonError("User profile not found", 404);
+    if (!isServiceRole) {
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        return jsonError("Unauthorized", 401);
+      }
+
+      const { data: profileData } = await supabase
+        .from("users")
+        .select("id")
+        .eq("auth_id", user.id)
+        .single();
+
+      profile = profileData;
+
+      if (!profile) {
+        return jsonError("User profile not found", 404);
+      }
     }
 
     const url = new URL(req.url);
     const pathParts = url.pathname.split("/").filter(Boolean);
+
+    // GET/PATCH endpoints require an authenticated user profile.
+    // Service-role callers can only use POST.
+    if (req.method !== "POST" && !profile) {
+      return jsonError("Unauthorized", 401);
+    }
 
     // GET /notifications - Get user's notifications
     if (req.method === "GET" && pathParts.length === 1) {
@@ -136,20 +160,24 @@ serve(async (req) => {
       const body = await req.json();
 
       // Verify caller is service role or admin
-      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const authHeader = req.headers.get("Authorization")!;
-      const isServiceRole = authHeader === `Bearer ${serviceRoleKey}`;
-
       if (!isServiceRole) {
-        // Check if caller is admin
-        const { data: admin } = await supabase
-          .from("admins")
-          .select("id")
-          .eq("auth_id", user.id)
-          .eq("status", "active")
-          .single();
+        // Check if caller is admin (user already authenticated above)
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
 
-        if (!admin) {
+        if (authUser) {
+          const { data: admin } = await supabase
+            .from("admins")
+            .select("id")
+            .eq("auth_id", authUser.id)
+            .eq("status", "active")
+            .single();
+
+          if (!admin) {
+            return jsonError("Forbidden", 403);
+          }
+        } else {
           return jsonError("Forbidden", 403);
         }
       }
@@ -179,7 +207,8 @@ serve(async (req) => {
         }
       }
 
-      const { data: notification, error } = await supabase
+      // Insert using service-role client (required by tightened RLS)
+      const { data: notification, error } = await serviceClient
         .from("notifications")
         .insert({
           user_id: userId,
@@ -201,6 +230,77 @@ serve(async (req) => {
           );
         }
         throw error;
+      }
+
+      // --- Email delivery (fire-and-forget, non-blocking) ---
+      // If the notification type is email-eligible, attempt to send an email.
+      // Failures are recorded in notification_deliveries but do not block
+      // the response or affect the in-app notification.
+      if (EMAIL_ELIGIBLE_TYPES.has(type) && notification) {
+        try {
+          // Look up the user's email
+          const { data: notifUser } = await serviceClient
+            .from("users")
+            .select("email, first_name, last_name")
+            .eq("id", userId)
+            .single();
+
+          if (notifUser?.email) {
+            const userName = `${notifUser.first_name || ""} ${notifUser.last_name || ""}`.trim() || "Customer";
+
+            // Create a pending delivery record
+            const { data: delivery } = await serviceClient
+              .from("notification_deliveries")
+              .insert({
+                notification_id: notification.id,
+                channel: "email",
+                status: "pending",
+              })
+              .select()
+              .single();
+
+            if (delivery) {
+              // Attempt to send the email via the email Edge Function
+              const emailResponse = await fetch(`${supabaseUrl}/functions/v1/email`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${serviceRoleKey}`,
+                  apikey: supabaseKey,
+                },
+                body: JSON.stringify({
+                  action: "notification-email",
+                  notificationType: type,
+                  userEmail: notifUser.email,
+                  userName,
+                  referenceType: referenceType || null,
+                  referenceId: referenceId || null,
+                }),
+              });
+
+              const emailResult = await emailResponse.json();
+
+              // Update delivery record based on result
+              if (emailResult.success) {
+                await serviceClient
+                  .from("notification_deliveries")
+                  .update({ status: "sent", delivered_at: new Date().toISOString() })
+                  .eq("id", delivery.id);
+              } else {
+                await serviceClient
+                  .from("notification_deliveries")
+                  .update({
+                    status: "failed",
+                    error_message: emailResult.error || "Email send failed",
+                  })
+                  .eq("id", delivery.id);
+              }
+            }
+          }
+        } catch (emailError) {
+          // Email delivery is non-critical; log but do not fail
+          console.error("Notification email delivery error:", emailError);
+        }
       }
 
       return new Response(

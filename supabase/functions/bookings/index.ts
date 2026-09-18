@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildCustomerCancellationNotification } from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -355,6 +356,10 @@ serve(async (req) => {
       // Fire-and-forget in-app notification (non-blocking)
       try {
         const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const cancelNotif = buildCustomerCancellationNotification({
+          userId: profile.id,
+          bookingId,
+        });
         fetch(`${supabaseUrl}/functions/v1/notifications`, {
           method: "POST",
           headers: {
@@ -362,14 +367,7 @@ serve(async (req) => {
             Authorization: `Bearer ${serviceRoleKey}`,
             apikey: supabaseKey,
           },
-          body: JSON.stringify({
-            userId: profile.id,
-            type: "booking_cancelled",
-            title: "Booking Cancelled",
-            message: "Your booking has been cancelled successfully.",
-            referenceType: "booking",
-            referenceId: bookingId,
-          }),
+          body: JSON.stringify(cancelNotif),
         }).catch(() => {});
       } catch {
         // Notifications are non-critical

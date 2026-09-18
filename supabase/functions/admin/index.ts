@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildBookingStatusNotification,
+  buildReviewModeratedNotification,
+} from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -409,7 +413,7 @@ serve(async (req) => {
       // Fetch current booking to validate transition
       const { data: current, error: fetchError } = await supabase
         .from("bookings")
-        .select("status")
+        .select("status, user_id, packages!bookings_package_id_fkey (name)")
         .eq("id", bookingId)
         .single();
 
@@ -441,6 +445,35 @@ serve(async (req) => {
         .eq("id", bookingId);
 
       if (error) throw error;
+
+      // Fire-and-forget in-app notification for status changes (non-blocking)
+      const previousStatus = current.status;
+      const bookingNotif = buildBookingStatusNotification({
+        previousStatus,
+        newStatus: status,
+        userId: current.user_id,
+        bookingId,
+        packageName: (current as { packages?: { name?: string } }).packages?.name,
+      });
+      if (bookingNotif) {
+        try {
+          const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+          fetch(`${supabaseUrl}/functions/v1/notifications`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceRoleKey}`,
+              apikey: supabaseKey,
+            },
+            body: JSON.stringify(bookingNotif),
+          }).catch(() => {});
+        } catch {
+          // Notifications are non-critical
+        }
+      }
 
       return new Response(
         JSON.stringify({ message: "Booking updated", previousStatus: current.status, newStatus: status }),
@@ -602,10 +635,36 @@ serve(async (req) => {
         .from("reviews")
         .update(updateData)
         .eq("id", reviewId)
-        .select("id, status")
+        .select("id, status, user_id")
         .single();
 
       if (error) throw error;
+
+      // Fire-and-forget in-app notification when review status changes (non-blocking)
+      if (status && review?.user_id) {
+        try {
+          const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+          const reviewNotif = buildReviewModeratedNotification({
+            userId: review.user_id,
+            reviewId,
+            status,
+          });
+
+          fetch(`${supabaseUrl}/functions/v1/notifications`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceRoleKey}`,
+              apikey: supabaseKey,
+            },
+            body: JSON.stringify(reviewNotif),
+          }).catch(() => {});
+        } catch {
+          // Notifications are non-critical
+        }
+      }
 
       return new Response(JSON.stringify({ review }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

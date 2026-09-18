@@ -12,6 +12,8 @@ export type NotificationType =
   | "safari_completed"
   | "quotation_sent"
   | "quotation_accepted"
+  | "review_submitted"
+  | "review_moderated"
   | "system";
 
 export type NotificationChannel = "in_app" | "email" | "whatsapp";
@@ -56,6 +58,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   safari_completed: "Safari Completed",
   quotation_sent: "Quotation Sent",
   quotation_accepted: "Quotation Accepted",
+  review_submitted: "Review Submitted",
+  review_moderated: "Review Update",
   system: "System",
 };
 
@@ -64,5 +68,6 @@ export function getNotificationIcon(type: NotificationType): string {
   if (type.startsWith("payment_")) return "💰";
   if (type.startsWith("safari_") || type === "itinerary_changed") return "🦁";
   if (type.startsWith("quotation_")) return "📄";
+  if (type.startsWith("review_")) return "⭐";
   return "🔔";
 }

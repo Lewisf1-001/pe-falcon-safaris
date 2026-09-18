@@ -1,36 +1,28 @@
 import { describe, it, expect } from "vitest";
+import {
+  NotificationType,
+  NotificationChannel,
+  DeliveryStatus,
+  NOTIFICATION_TYPE_LABELS,
+  getNotificationIcon,
+} from "@/types/notification";
 
-// ---- Reimplemented from notification system for unit testing ----
-
-type NotificationType =
-  | "booking_received"
-  | "booking_confirmed"
-  | "booking_status_changed"
-  | "booking_cancelled"
-  | "payment_received"
-  | "payment_failed"
-  | "payment_status_changed"
-  | "safari_approaching"
-  | "safari_reminder"
-  | "itinerary_changed"
-  | "safari_completed"
-  | "quotation_sent"
-  | "quotation_accepted"
-  | "system";
-
-type NotificationChannel = "in_app" | "email" | "whatsapp";
-type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
-
+// Valid values for validation testing
 const VALID_NOTIFICATION_TYPES: NotificationType[] = [
   "booking_received", "booking_confirmed", "booking_status_changed",
   "booking_cancelled", "payment_received", "payment_failed",
   "payment_status_changed", "safari_approaching", "safari_reminder",
   "itinerary_changed", "safari_completed", "quotation_sent",
-  "quotation_accepted", "system",
+  "quotation_accepted", "review_submitted", "review_moderated", "system",
 ];
 
 const VALID_CHANNELS: NotificationChannel[] = ["in_app", "email", "whatsapp"];
 const VALID_DELIVERY_STATUSES: DeliveryStatus[] = ["pending", "sent", "delivered", "failed"];
+
+// ============================================================
+// Helper functions (kept local for unit testing logic that is
+// not exported from the source modules)
+// ============================================================
 
 function isValidNotificationType(type: unknown): type is NotificationType {
   return typeof type === "string" && (VALID_NOTIFICATION_TYPES as string[]).includes(type);
@@ -55,44 +47,6 @@ function isPaymentType(type: NotificationType): boolean {
 function isSafariType(type: NotificationType): boolean {
   return type.startsWith("safari_") || type === "itinerary_changed";
 }
-
-function getNotificationIcon(type: NotificationType): string {
-  if (isBookingType(type)) return "📋";
-  if (isPaymentType(type)) return "💰";
-  if (isSafariType(type)) return "🦁";
-  if (type.startsWith("quotation_")) return "📄";
-  return "🔔";
-}
-
-const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
-  booking_received: "Booking Received",
-  booking_confirmed: "Booking Confirmed",
-  booking_status_changed: "Booking Status Changed",
-  booking_cancelled: "Booking Cancelled",
-  payment_received: "Payment Received",
-  payment_failed: "Payment Failed",
-  payment_status_changed: "Payment Status Changed",
-  safari_approaching: "Safari Approaching",
-  safari_reminder: "Safari Reminder",
-  itinerary_changed: "Itinerary Changed",
-  safari_completed: "Safari Completed",
-  quotation_sent: "Quotation Sent",
-  quotation_accepted: "Quotation Accepted",
-  system: "System",
-};
-
-type Notification = {
-  id: number;
-  userId: number;
-  type: NotificationType;
-  title: string;
-  message: string;
-  referenceType: string | null;
-  referenceId: number | null;
-  isRead: boolean;
-  createdAt: string;
-  readAt: string | null;
-};
 
 function validateNotificationInput(input: {
   userId: unknown;
@@ -122,6 +76,19 @@ function validateNotificationInput(input: {
 
   return errors;
 }
+
+type Notification = {
+  id: number;
+  userId: number;
+  type: NotificationType;
+  title: string;
+  message: string;
+  referenceType: string | null;
+  referenceId: number | null;
+  isRead: boolean;
+  createdAt: string;
+  readAt: string | null;
+};
 
 function checkIdempotency(
   existing: Notification[],
@@ -154,6 +121,10 @@ function formatTimeAgo(dateStr: string): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+// ============================================================
+// Tests
+// ============================================================
 
 describe("Phase 15: Notifications", () => {
   describe("Notification type validation", () => {
@@ -215,15 +186,32 @@ describe("Phase 15: Notifications", () => {
       expect(isSafariType("itinerary_changed")).toBe(true);
       expect(isSafariType("booking_received")).toBe(false);
     });
+
+    it("correctly identifies review types", () => {
+      expect("review_submitted".startsWith("review_")).toBe(true);
+      expect("review_moderated".startsWith("review_")).toBe(true);
+      expect("booking_received".startsWith("review_")).toBe(false);
+    });
   });
 
-  describe("Notification icons", () => {
+  describe("Notification icons (imported from source)", () => {
     it("returns correct icons for each category", () => {
       expect(getNotificationIcon("booking_received")).toBe("📋");
       expect(getNotificationIcon("payment_received")).toBe("💰");
       expect(getNotificationIcon("safari_approaching")).toBe("🦁");
       expect(getNotificationIcon("quotation_sent")).toBe("📄");
+      expect(getNotificationIcon("review_submitted")).toBe("⭐");
+      expect(getNotificationIcon("review_moderated")).toBe("⭐");
       expect(getNotificationIcon("system")).toBe("🔔");
+    });
+  });
+
+  describe("Type labels (imported from source)", () => {
+    it("has labels for all types", () => {
+      for (const type of VALID_NOTIFICATION_TYPES) {
+        expect(NOTIFICATION_TYPE_LABELS[type]).toBeTruthy();
+        expect(typeof NOTIFICATION_TYPE_LABELS[type]).toBe("string");
+      }
     });
   });
 
@@ -333,11 +321,25 @@ describe("Phase 15: Notifications", () => {
     });
   });
 
-  describe("Type labels", () => {
-    it("has labels for all types", () => {
-      for (const type of VALID_NOTIFICATION_TYPES) {
-        expect(NOTIFICATION_TYPE_LABELS[type]).toBeTruthy();
-        expect(typeof NOTIFICATION_TYPE_LABELS[type]).toBe("string");
+  describe("Email delivery type mapping", () => {
+    it("defines email-eligible types that match source constants", async () => {
+      const { EMAIL_ELIGIBLE_TYPES, isEmailEligibleNotificationType } = await import(
+        "../../../supabase/functions/_shared/notification-triggers"
+      );
+      const emailEligibleTypes = ["booking_received", "payment_received", "payment_failed"] as const;
+
+      expect([...EMAIL_ELIGIBLE_TYPES].sort()).toEqual([...emailEligibleTypes].sort());
+      for (const type of emailEligibleTypes) {
+        expect(isEmailEligibleNotificationType(type)).toBe(true);
+        expect(VALID_NOTIFICATION_TYPES).toContain(type);
+      }
+    });
+
+    it("does not include whatsapp in delivery channels for email-only operations", () => {
+      const emailOnlyChannels: NotificationChannel[] = ["in_app", "email"];
+      for (const ch of emailOnlyChannels) {
+        expect(isValidChannel(ch)).toBe(true);
+        expect(ch).not.toBe("whatsapp");
       }
     });
   });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthUser, getUser, onAuthStateChange, signOut } from "@/lib/auth";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 export default function AuthNav() {
   const router = useRouter();
@@ -28,7 +29,8 @@ export default function AuthNav() {
 
   if (user) {
     return (
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-4 sm:gap-5">
+        <NotificationBell />
         <Link
           href="/dashboard"
           className="hidden font-display text-[11px] font-medium uppercase tracking-[0.18em] text-white/55 transition-colors hover:text-white/90 sm:inline lg:text-xs"

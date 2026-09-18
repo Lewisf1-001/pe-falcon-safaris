@@ -1,42 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthUser, getAuthToken } from "@/lib/auth";
-import {
-  Notification,
-  NOTIFICATION_TYPE_LABELS,
-  getNotificationIcon,
-} from "@/types/notification";
+import type { Notification } from "@/types/notification";
 import {
   fetchUserNotifications,
   fetchUnreadCount,
   markNotificationRead,
   markAllNotificationsRead,
 } from "@/lib/notifications";
+import {
+  applyMarkAllRead,
+  applyMarkOneRead,
+  formatUnreadBadgeCount,
+  getNotificationUserErrorMessage,
+  NOTIFICATION_PANEL_LIMIT,
+} from "@/lib/notification-ui";
+import NotificationList from "@/components/notifications/NotificationList";
 
 type DashboardNotificationsProps = {
   user: AuthUser;
 };
 
-export default function DashboardNotifications({ user }: DashboardNotificationsProps) {
+export default function DashboardNotifications({ user: _user }: DashboardNotificationsProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const markingIds = useRef<Set<number>>(new Set());
 
   const loadData = useCallback(async () => {
     const token = await getAuthToken();
-    if (!token) return;
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
+    setError(null);
     try {
       const [notifs, count] = await Promise.all([
-        fetchUserNotifications(token, 20),
+        fetchUserNotifications(token, NOTIFICATION_PANEL_LIMIT),
         fetchUnreadCount(token),
       ]);
       setNotifications(notifs);
       setUnreadCount(count);
     } catch {
-      // Error handling
+      setError(getNotificationUserErrorMessage());
     } finally {
       setIsLoading(false);
     }
@@ -47,69 +56,70 @@ export default function DashboardNotifications({ user }: DashboardNotificationsP
   }, [loadData]);
 
   async function handleMarkRead(id: number) {
+    if (markingIds.current.has(id)) return;
+    const target = notifications.find((n) => n.id === id);
+    if (target?.isRead) return;
+
+    markingIds.current.add(id);
     const token = await getAuthToken();
-    if (!token) return;
+    if (!token) {
+      markingIds.current.delete(id);
+      return;
+    }
+
+    setNotifications((prev) => {
+      const next = applyMarkOneRead(prev, unreadCount, id);
+      setUnreadCount(next.unreadCount);
+      return next.notifications;
+    });
+
     try {
       await markNotificationRead(token, id);
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n
-        )
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
-      // Error handling
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: false, readAt: null } : n))
+      );
+      setUnreadCount((prev) => prev + 1);
+    } finally {
+      markingIds.current.delete(id);
     }
   }
 
   async function handleMarkAllRead() {
+    if (unreadCount <= 0) return;
     const token = await getAuthToken();
     if (!token) return;
+
+    const previous = notifications;
+    const previousCount = unreadCount;
+    const next = applyMarkAllRead(notifications);
+    setNotifications(next.notifications);
+    setUnreadCount(next.unreadCount);
+
     try {
       await markAllNotificationsRead(token);
-      setNotifications((prev) =>
-        prev.map((n) => ({
-          ...n,
-          isRead: true,
-          readAt: n.readAt || new Date().toISOString(),
-        }))
-      );
-      setUnreadCount(0);
     } catch {
-      // Error handling
+      setNotifications(previous);
+      setUnreadCount(previousCount);
     }
   }
 
-  function formatTime(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
-
-  function getNotificationLink(notif: Notification): string | null {
-    if (notif.referenceType === "booking" && notif.referenceId) {
-      return `/bookings/${notif.referenceId}`;
-    }
-    return null;
-  }
+  const badge = formatUnreadBadgeCount(unreadCount);
+  const visible = isExpanded ? notifications : notifications.slice(0, 5);
 
   return (
-    <section className="rounded-xl bg-white p-6 shadow-lg sm:p-8">
+    <section className="rounded-xl bg-white p-6 shadow-lg sm:p-8" aria-labelledby="dashboard-notifications-heading">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-forest">Notifications</h2>
-          {unreadCount > 0 && (
-            <span className="inline-flex items-center justify-center rounded-full bg-red-500 px-2.5 py-0.5 text-xs font-bold text-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
+          <h2 id="dashboard-notifications-heading" className="text-lg font-semibold text-forest">
+            Notifications
+          </h2>
+          {badge && (
+            <span
+              className="inline-flex items-center justify-center rounded-full bg-red-500 px-2.5 py-0.5 text-xs font-bold text-white"
+              aria-label={`${unreadCount} unread notifications`}
+            >
+              <span aria-hidden="true">{badge}</span>
             </span>
           )}
         </div>
@@ -120,89 +130,43 @@ export default function DashboardNotifications({ user }: DashboardNotificationsP
               onClick={handleMarkAllRead}
               className="text-xs font-medium text-forest hover:underline"
             >
-              Mark all read
+              Mark all as read
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs font-medium text-forest hover:underline"
-          >
-            {isExpanded ? "Show less" : "View all"}
-          </button>
+          {notifications.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-xs font-medium text-forest hover:underline"
+            >
+              {isExpanded ? "Show less" : "View all"}
+            </button>
+          )}
         </div>
       </div>
 
       {isLoading ? (
         <p className="mt-4 text-sm text-gray-500">Loading notifications...</p>
-      ) : notifications.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-500">
-          No notifications yet. You&apos;ll be notified about bookings, payments, and safari updates.
-        </p>
-      ) : (
-        <div className="mt-4 space-y-2">
-          {(isExpanded ? notifications : notifications.slice(0, 5)).map((notif) => {
-            const link = getNotificationLink(notif);
-            const content = (
-              <div
-                className={`flex items-start gap-3 rounded-lg p-3 transition-colors ${
-                  notif.isRead
-                    ? "bg-gray-50"
-                    : "border border-champagne/30 bg-champagne/5"
-                }`}
-              >
-                <span className="mt-0.5 text-lg" aria-hidden="true">
-                  {getNotificationIcon(notif.type)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p
-                      className={`text-sm font-medium ${
-                        notif.isRead ? "text-gray-700" : "text-forest"
-                      }`}
-                    >
-                      {notif.title}
-                    </p>
-                    {!notif.isRead && (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-champagne" aria-label="Unread" />
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-sm text-gray-500 line-clamp-2">
-                    {notif.message}
-                  </p>
-                  <div className="mt-1 flex items-center gap-3">
-                    <span className="text-xs text-gray-400">
-                      {formatTime(notif.createdAt)}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {NOTIFICATION_TYPE_LABELS[notif.type]}
-                    </span>
-                  </div>
-                </div>
-                {!notif.isRead && (
-                  <button
-                    type="button"
-                    onClick={() => handleMarkRead(notif.id)}
-                    className="shrink-0 text-xs text-gray-400 hover:text-forest"
-                    aria-label="Mark as read"
-                  >
-                    ✓
-                  </button>
-                )}
-              </div>
-            );
-
-            if (link) {
-              return (
-                <Link key={notif.id} href={link} className="block">
-                  {content}
-                </Link>
-              );
-            }
-
-            return <div key={notif.id}>{content}</div>;
-          })}
+      ) : error ? (
+        <div className="mt-4">
+          <p className="text-sm text-gray-600">{error}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setIsLoading(true);
+              loadData();
+            }}
+            className="mt-2 text-xs font-medium text-forest hover:underline"
+          >
+            Try again
+          </button>
         </div>
+      ) : (
+        <NotificationList
+          notifications={visible}
+          onMarkRead={handleMarkRead}
+          emptyMessage={"No notifications yet. You'll be notified about bookings, payments, and safari updates."}
+        />
       )}
     </section>
   );

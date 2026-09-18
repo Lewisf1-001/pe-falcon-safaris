@@ -1,5 +1,9 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildQuotationAcceptedNotification,
+  buildQuotationSentNotification,
+} from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -333,6 +337,26 @@ serve(async (req) => {
         // Non-critical
       }
 
+      // Fire-and-forget in-app notification to customer (non-blocking)
+      try {
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const acceptedNotif = buildQuotationAcceptedNotification({
+          userId: quotation.user_id,
+          quotationId,
+        });
+        fetch(`${supabaseUrl}/functions/v1/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: supabaseKey,
+          },
+          body: JSON.stringify(acceptedNotif),
+        }).catch(() => {});
+      } catch {
+        // Notifications are non-critical
+      }
+
       return jsonSuccess({ message: "Quotation accepted successfully" });
     }
 
@@ -581,7 +605,7 @@ serve(async (req) => {
 
       const { data: existing } = await supabase
         .from("quotations")
-        .select("id, status")
+        .select("id, status, user_id, title")
         .eq("id", quotationId)
         .single();
 
@@ -620,6 +644,27 @@ serve(async (req) => {
         }).catch(() => {});
       } catch {
         // Non-critical
+      }
+
+      // Fire-and-forget in-app notification to customer (non-blocking)
+      try {
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const sentNotif = buildQuotationSentNotification({
+          userId: existing.user_id,
+          quotationId,
+          title: existing.title,
+        });
+        fetch(`${supabaseUrl}/functions/v1/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: supabaseKey,
+          },
+          body: JSON.stringify(sentNotif),
+        }).catch(() => {});
+      } catch {
+        // Notifications are non-critical
       }
 
       return jsonSuccess({ message: "Quotation sent" });

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildReviewSubmittedNotification } from "../_shared/notification-triggers.ts";
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
@@ -199,6 +200,26 @@ serve(async (req) => {
         }
       } catch {
         // Email notification is non-critical
+      }
+
+      // Fire-and-forget: in-app notification confirming review submission (non-blocking)
+      try {
+        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+        const reviewNotif = buildReviewSubmittedNotification({
+          userId: profile.id,
+          reviewId: review.id,
+        });
+        fetch(`${supabaseUrl}/functions/v1/notifications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${serviceRoleKey}`,
+            apikey: supabaseKey,
+          },
+          body: JSON.stringify(reviewNotif),
+        }).catch(() => {});
+      } catch {
+        // Notifications are non-critical
       }
 
       return new Response(
