@@ -1,10 +1,12 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
 serve(async (req) => {
@@ -24,7 +26,7 @@ serve(async (req) => {
     if (req.method === "GET" && pathParts.length === 1) {
       const { data, error } = await supabase
         .from("packages")
-        .select("*")
+        .select("id, slug, name, duration, ideal_for, destinations, highlights, includes, starting_price, starting_price_usd, price_currency, price_note, is_active, sort_order, gallery_images, created_at, updated_at")
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
@@ -62,7 +64,7 @@ serve(async (req) => {
 
       const { data, error } = await supabase
         .from("packages")
-        .select("*")
+        .select("id, slug, name, duration, ideal_for, destinations, highlights, includes, starting_price, starting_price_usd, price_currency, price_note, is_active, sort_order, gallery_images, created_at, updated_at")
         .eq("slug", slug)
         .eq("is_active", true)
         .single();

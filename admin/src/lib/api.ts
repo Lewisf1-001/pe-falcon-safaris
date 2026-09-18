@@ -37,10 +37,32 @@ export async function callEdgeFunction<T>(
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
-  const data = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(data.error || `Edge function ${functionName} failed.`);
+    let errorBody;
+    try {
+      errorBody = JSON.parse(text);
+    } catch {
+      errorBody = { error: text || `Edge function ${functionName} failed.` };
+    }
+    throw new Error(
+      errorBody.error || `Edge function ${functionName} failed with status ${response.status}.`
+    );
+  }
+
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `Edge function ${functionName} returned unexpected content type: ${contentType || "empty"}`
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Edge function ${functionName} returned invalid JSON.`);
   }
 
   return data as T;

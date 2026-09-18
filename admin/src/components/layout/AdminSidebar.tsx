@@ -11,8 +11,13 @@ const navItems = [
   { label: "Admin Users", href: "/admin-users" },
   { label: "Clients", href: "/clients" },
   { label: "Bookings", href: "/bookings" },
+  { label: "Quotations", href: "/quotations" },
+  { label: "Destinations", href: "/destinations" },
+  { label: "Wildlife", href: "/wildlife" },
+  { label: "Journal", href: "/journal" },
   { label: "Packages", href: "/packages" },
   { label: "Payments", href: "/payments" },
+  { label: "Reviews", href: "/reviews" },
 ];
 
 export default function AdminSidebar() {

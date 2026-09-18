@@ -1,12 +1,28 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGINS,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
+
+/**
+ * Validate password strength. Mirrors Supabase Auth minimum requirements:
+ * at least 8 characters. This is intentionally not more restrictive to
+ * avoid conflicting with Supabase Auth's own validation.
+ */
+function validatePassword(password: string): string | null {
+  if (password.length < 8) {
+    return "Password must be at least 8 characters long";
+  }
+  if (password.length > 128) {
+    return "Password must be at most 128 characters long";
+  }
+  return null;
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -23,58 +39,76 @@ serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Extract and verify the caller's JWT
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Accept-invite and validate-invite are public — no auth required
+    let body: Record<string, unknown> = {};
+    try {
+      body = await req.clone().json();
+    } catch {
+      // GET requests or malformed bodies — body stays empty
+    }
+    const action = body.action as string | undefined;
+    const isPublicAction = req.method === "POST" && (action === "validate-invite" || action === "accept-invite");
+
+    let callerAdmin: Record<string, unknown> | null = null;
+
+    if (!isPublicAction) {
+      // Extract and verify the caller's JWT
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        return new Response(
+          JSON.stringify({ error: "Missing authorization header" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const token = authHeader.replace("Bearer ", "");
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: `Bearer ${token}` } } }
       );
+
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Verify caller is an active admin — select only safe fields
+      const { data: admin, error: callerAdminError } = await supabaseAdmin
+        .from("admins")
+        .select("id, username, role, status")
+        .eq("auth_id", user.id)
+        .eq("status", "active")
+        .single();
+
+      if (callerAdminError || !admin) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden: Not an active admin" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      callerAdmin = admin;
+
+      // Verify caller is a superadmin for invite/management operations
+      if (req.method === "POST" && callerAdmin.role !== "superadmin") {
+        if (action !== "accept-invite" && action !== "validate-invite") {
+          return new Response(
+            JSON.stringify({ error: "Forbidden: Only superadmins can manage admin users" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
     }
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    );
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify caller is an active admin
-    const { data: callerAdmin, error: callerAdminError } = await supabaseAdmin
-      .from("admins")
-      .select("*")
-      .eq("auth_id", user.id)
-      .eq("status", "active")
-      .single();
-
-    if (callerAdminError || !callerAdmin) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Not an active admin" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify caller is a superadmin for invite/management operations
-    if (req.method === "POST" && callerAdmin.role !== "superadmin") {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Only superadmins can manage admin users" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // GET /admin-users - List all admins
+    // GET /admin-users - List all admins — select only safe fields, never expose tokens
     if (req.method === "GET" && path === "admin-users") {
       const { data: admins, error } = await supabaseAdmin
         .from("admins")
@@ -93,9 +127,6 @@ serve(async (req: Request) => {
 
     // POST /admin-users
     if (req.method === "POST" && path === "admin-users") {
-      const body = await req.json();
-      const { action } = body;
-
       // Invite a new admin
       if (action === "invite") {
         const { username, email } = body;
@@ -139,7 +170,7 @@ serve(async (req: Request) => {
         const inviteToken = crypto.randomUUID();
         const inviteExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-        // Create admin record
+        // Create admin record — only include columns that exist in the schema
         const { data: newAdmin, error: createError } = await supabaseAdmin
           .from("admins")
           .insert({
@@ -147,10 +178,9 @@ serve(async (req: Request) => {
             email,
             status: "invited",
             invite_token: inviteToken,
-            invite_expires: inviteExpires,
-            invited_by: callerAdmin.id,
+            invite_token_expires_at: inviteExpires,
           })
-          .select()
+          .select("id")
           .single();
 
         if (createError) {
@@ -164,7 +194,7 @@ serve(async (req: Request) => {
               admin_id: newAdmin.id,
               username,
             },
-            redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:3000"}/admin/accept-invite?token=${inviteToken}`,
+            redirectTo: `${Deno.env.get("SITE_URL") || Deno.env.get("CLIENT_URL") || "https://pefalconsafaris.com"}/accept-invite?token=${inviteToken}`,
           });
 
         if (inviteError) {
@@ -198,10 +228,10 @@ serve(async (req: Request) => {
           );
         }
 
-        // Find admin with invited status
+        // Find admin with invited status — select only safe fields
         const { data: admin, error: adminError } = await supabaseAdmin
           .from("admins")
-          .select("*")
+          .select("id, email, username, status")
           .eq("id", admin_id)
           .eq("status", "invited")
           .single();
@@ -222,7 +252,7 @@ serve(async (req: Request) => {
           .from("admins")
           .update({
             invite_token: inviteToken,
-            invite_expires: inviteExpires,
+            invite_token_expires_at: inviteExpires,
           })
           .eq("id", admin.id);
 
@@ -238,7 +268,7 @@ serve(async (req: Request) => {
               admin_id: admin.id,
               username: admin.username,
             },
-            redirectTo: `${Deno.env.get("SITE_URL") || "http://localhost:3000"}/admin/accept-invite?token=${inviteToken}`,
+            redirectTo: `${Deno.env.get("SITE_URL") || Deno.env.get("CLIENT_URL") || "https://pefalconsafaris.com"}/accept-invite?token=${inviteToken}`,
           }
         );
 
@@ -252,7 +282,45 @@ serve(async (req: Request) => {
         );
       }
 
-      // Accept admin invite
+      // Validate invite token (public — no auth required)
+      if (action === "validate-invite") {
+        const { token } = body;
+
+        if (!token) {
+          return new Response(
+            JSON.stringify({ error: "Token is required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const { data: admin, error: adminError } = await supabaseAdmin
+          .from("admins")
+          .select("username, email, invite_token_expires_at")
+          .eq("invite_token", token)
+          .eq("status", "invited")
+          .single();
+
+        if (adminError || !admin) {
+          return new Response(
+            JSON.stringify({ error: "Invalid invite token" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        if (admin.invite_token_expires_at && new Date(admin.invite_token_expires_at) < new Date()) {
+          return new Response(
+            JSON.stringify({ error: "Invite token has expired" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({ username: admin.username, email: admin.email }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Accept admin invite (public — no auth required)
       if (action === "accept-invite") {
         const { invite_token, password } = body;
 
@@ -263,10 +331,19 @@ serve(async (req: Request) => {
           );
         }
 
-        // Find admin by invite token
+        // Validate password strength
+        const passwordError = validatePassword(password as string);
+        if (passwordError) {
+          return new Response(
+            JSON.stringify({ error: passwordError }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Find admin by invite token — select only safe fields
         const { data: admin, error: adminError } = await supabaseAdmin
           .from("admins")
-          .select("*")
+          .select("id, auth_id, invite_token_expires_at, status")
           .eq("invite_token", invite_token)
           .eq("status", "invited")
           .single();
@@ -279,7 +356,7 @@ serve(async (req: Request) => {
         }
 
         // Check token expiry
-        if (admin.invite_expires && new Date(admin.invite_expires) < new Date()) {
+        if (admin.invite_token_expires_at && new Date(admin.invite_token_expires_at) < new Date()) {
           return new Response(
             JSON.stringify({ error: "Invite token has expired" }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -296,7 +373,7 @@ serve(async (req: Request) => {
 
         const { error: updatePasswordError } =
           await supabaseAdmin.auth.admin.updateUserById(admin.auth_id, {
-            password,
+            password: password as string,
           });
 
         if (updatePasswordError) {
@@ -309,7 +386,7 @@ serve(async (req: Request) => {
           .update({
             status: "active",
             invite_token: null,
-            invite_expires: null,
+            invite_token_expires_at: null,
           })
           .eq("id", admin.id);
 

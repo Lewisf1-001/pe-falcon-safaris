@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Figtree, Montserrat, Outfit } from "next/font/google";
 import { CurrencyProvider } from "@/components/currency/CurrencyProvider";
+import FloatingWhatsApp from "@/components/layout/FloatingWhatsApp";
 import "./globals.css";
 
 const figtree = Figtree({
@@ -42,6 +43,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <CurrencyProvider>{children}</CurrencyProvider>
+        <FloatingWhatsApp />
       </body>
     </html>
   );

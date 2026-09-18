@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PasswordInput from "@/components/auth/PasswordInput";
-import { callEdgeFunction } from "@/lib/api";
 const REDIRECT_DELAY_MS = 2000;
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 type FormState = {
   password: string;
@@ -15,6 +17,32 @@ const initialState: FormState = {
   password: "",
   confirmPassword: "",
 };
+
+async function inviteFetch<T>(body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+
+  if (!response.ok || !contentType.includes("application/json")) {
+    let errorBody;
+    try {
+      errorBody = JSON.parse(text);
+    } catch {
+      errorBody = { error: text || "Request failed." };
+    }
+    throw new Error(errorBody.error || `Request failed with status ${response.status}.`);
+  }
+
+  return JSON.parse(text) as T;
+}
 
 export default function AcceptInviteContent() {
   const router = useRouter();
@@ -43,13 +71,10 @@ export default function AcceptInviteContent() {
       }
 
       try {
-        const data = await callEdgeFunction<{ username: string; email: string }>(
-          "admin-users",
-          {
-            method: "POST",
-            body: { action: "validate-invite", token },
-          }
-        );
+        const data = await inviteFetch<{ username: string; email: string }>({
+          action: "validate-invite",
+          token,
+        });
 
         setInviteUsername(data.username);
         setInviteEmail(data.email);
@@ -76,14 +101,11 @@ export default function AcceptInviteContent() {
     setIsSubmitting(true);
 
     try {
-      const data = await callEdgeFunction<{ message?: string }>("admin-users", {
-        method: "POST",
-        body: {
-          action: "accept-invite",
-          token,
-          password: form.password,
-          confirmPassword: form.confirmPassword,
-        },
+      const data = await inviteFetch<{ message?: string }>({
+        action: "accept-invite",
+        token,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
       });
 
       setSuccess(data.message || "Account activated. Redirecting to sign in...");

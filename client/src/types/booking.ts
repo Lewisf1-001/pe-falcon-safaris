@@ -1,4 +1,16 @@
-export type BookingStatus = "pending" | "confirmed" | "cancelled";
+export type BookingStatus =
+  | "inquiry"
+  | "quote"
+  | "pending"
+  | "deposit_required"
+  | "partially_paid"
+  | "confirmed"
+  | "upcoming"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "expired"
+  | "refunded";
 
 export type Booking = {
   id: number;

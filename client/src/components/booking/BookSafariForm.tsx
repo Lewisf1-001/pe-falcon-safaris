@@ -65,99 +65,35 @@ export default function BookSafariForm({ safariPackage }: BookSafariFormProps) {
 
     try {
       const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
 
-      // Get user profile
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      if (!session?.access_token) {
         setError("You must be logged in to book.");
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("users")
-        .select("id, first_name, last_name")
-        .eq("auth_id", user.id)
-        .single();
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-      if (!profile) {
-        setError("User profile not found.");
-        return;
-      }
+      const response = await fetch(`${supabaseUrl}/functions/v1/bookings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: supabaseKey,
+        },
+        body: JSON.stringify({
+          packageSlug: safariPackage.slug,
+          travelDate: form.travelDate,
+          guests: Number(form.guests),
+          notes: form.notes.trim() || undefined,
+        }),
+      });
 
-      // Get package
-      const { data: pkg } = await supabase
-        .from("packages")
-        .select("id, name, starting_price, starting_price_usd")
-        .eq("slug", safariPackage.slug)
-        .single();
+      const data = await response.json();
 
-      if (!pkg) {
-        setError("Package not found.");
-        return;
-      }
-
-      // Calculate price
-      const guests = Number(form.guests);
-      const totalPriceUsd = Number(pkg.starting_price_usd) * guests;
-
-      // Create booking
-      const { error: bookingError } = await supabase
-        .from("bookings")
-        .insert({
-          user_id: profile.id,
-          package_id: pkg.id,
-          travel_date: form.travelDate,
-          guests,
-          total_price_usd: totalPriceUsd,
-          status: "pending",
-          notes: form.notes.trim() || null,
-        });
-
-      if (bookingError) throw bookingError;
-
-      // Send booking confirmation email via Edge Function
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-
-        await fetch(`${supabaseUrl}/functions/v1/email`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token || ""}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          },
-          body: JSON.stringify({
-            action: "booking-confirmation",
-            clientEmail: user.email,
-            clientName: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Customer",
-            packageName: safariPackage.name,
-            travelDate: form.travelDate,
-            guests,
-            total: totalPriceUsd,
-          }),
-        });
-
-        // Notify admins
-        await fetch(`${supabaseUrl}/functions/v1/email`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token || ""}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          },
-          body: JSON.stringify({
-            action: "admin-notification",
-            clientEmail: user.email,
-            clientName: `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Customer",
-            packageName: safariPackage.name,
-            travelDate: form.travelDate,
-            guests,
-            total: totalPriceUsd,
-          }),
-        });
-      } catch {
-        // Email sending is non-critical; booking is already created
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to submit booking.");
       }
 
       setSuccess("Booking submitted. Check your email for confirmation.");

@@ -1,5 +1,6 @@
 -- PE Falcon Safaris - Supabase Storage Setup
 -- Run this in the Supabase SQL Editor after schema.sql
+-- Aligned with migration 004: public listing policy removed.
 
 -- Create storage buckets
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -11,11 +12,10 @@ ON CONFLICT (id) DO NOTHING;
 -- STORAGE POLICIES
 -- ============================================================
 
--- Public read access for package images
-CREATE POLICY "Public read access for package images"
-  ON storage.objects
-  FOR SELECT
-  USING (bucket_id = 'package-images');
+-- Note: The bucket is public (direct URL access works for anonymous
+-- visitors viewing safari images). No public SELECT/listing policy
+-- is created — images are referenced by direct URL stored in
+-- packages.gallery_images.
 
 -- Authenticated upload for admins
 CREATE POLICY "Admins can upload package images"
@@ -23,10 +23,7 @@ CREATE POLICY "Admins can upload package images"
   FOR INSERT
   WITH CHECK (
     bucket_id = 'package-images'
-    AND EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    AND public.is_active_admin(auth.uid())
   );
 
 -- Admins can update package images
@@ -35,10 +32,7 @@ CREATE POLICY "Admins can update package images"
   FOR UPDATE
   USING (
     bucket_id = 'package-images'
-    AND EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    AND public.is_active_admin(auth.uid())
   );
 
 -- Admins can delete package images
@@ -47,8 +41,5 @@ CREATE POLICY "Admins can delete package images"
   FOR DELETE
   USING (
     bucket_id = 'package-images'
-    AND EXISTS (
-      SELECT 1 FROM admins
-      WHERE auth_id = auth.uid() AND status = 'active'
-    )
+    AND public.is_active_admin(auth.uid())
   );

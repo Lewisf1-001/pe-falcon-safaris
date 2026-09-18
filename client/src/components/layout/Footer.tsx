@@ -1,8 +1,26 @@
 import Link from "next/link";
+import { getWhatsAppNumber, buildWhatsAppUrl } from "@/lib/whatsapp";
 
 const quickLinks = [
+  { label: "Destinations", href: "/destinations" },
+  { label: "Safari Map", href: "/map" },
+  { label: "Trip Builder", href: "/trip-builder" },
+  { label: "Wildlife", href: "/wildlife" },
   { label: "Packages", href: "/packages" },
+  { label: "Reviews", href: "/reviews" },
+  { label: "Safari Assistant", href: "/assistant" },
+  { label: "Safari Journal", href: "/journal" },
+  { label: "Contact Us", href: "/contact" },
+];
+
+const planLinks = [
   { label: "Book Now", href: "/#book" },
+  { label: "My Bookings", href: "/bookings" },
+  { label: "Login", href: "/login" },
+  { label: "Register", href: "/register" },
+];
+
+const companyLinks = [
   { label: "About Us", href: "/#about" },
 ];
 
@@ -13,10 +31,16 @@ const socialLinks = [
 ];
 
 export default function Footer() {
+  const whatsappNumber = getWhatsAppNumber();
+  const whatsappUrl = whatsappNumber
+    ? buildWhatsAppUrl(whatsappNumber, "Hello! I'd like to inquire about a safari with PE Falcon Safaris.")
+    : null;
+
   return (
     <footer className="bg-forest text-white">
       <div className="mx-auto max-w-6xl px-6 py-12 lg:px-8">
-        <div className="grid gap-10 md:grid-cols-3">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Company info */}
           <div>
             <h3 className="font-calligraphy text-3xl text-champagne">
               PE Falcon Safaris
@@ -36,6 +60,7 @@ export default function Footer() {
             </div>
           </div>
 
+          {/* Quick Links */}
           <div>
             <h3 className="text-lg font-bold text-champagne">Quick Links</h3>
             <ul className="mt-4 space-y-2 text-sm text-white/85">
@@ -49,8 +74,46 @@ export default function Footer() {
             </ul>
           </div>
 
+          {/* Plan & Manage */}
           <div>
-            <h3 className="text-lg font-bold text-champagne">Follow Us</h3>
+            <h3 className="text-lg font-bold text-champagne">Plan &amp; Manage</h3>
+            <ul className="mt-4 space-y-2 text-sm text-white/85">
+              {planLinks.map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href} className="hover:text-white">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+              {whatsappUrl && (
+                <li>
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-white"
+                  >
+                    WhatsApp Us
+                  </a>
+                </li>
+              )}
+            </ul>
+          </div>
+
+          {/* Company + Follow Us */}
+          <div>
+            <h3 className="text-lg font-bold text-champagne">Company</h3>
+            <ul className="mt-4 space-y-2 text-sm text-white/85">
+              {companyLinks.map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href} className="hover:text-white">
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            <h3 className="mt-6 text-lg font-bold text-champagne">Follow Us</h3>
             <ul className="mt-4 space-y-2 text-sm text-white/85">
               {socialLinks.map((link) => (
                 <li key={link.label}>
@@ -69,7 +132,7 @@ export default function Footer() {
         </div>
 
         <p className="mt-10 border-t border-white/15 pt-6 text-center text-sm text-white/70">
-          © 2026 PE Falcon Safaris. All rights reserved.
+          &copy; 2026 PE Falcon Safaris. All rights reserved.
         </p>
       </div>
     </footer>
